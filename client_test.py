@@ -8,7 +8,7 @@ def main():
     req = emg_pb2.SubscribeRequest(max_rate_hz=0)
     for i, sample in enumerate(stub.StreamEmg(req)):
         print(f"{i:06d}  value={sample.value:4d}  battery={sample.battery:3d}%  ts={sample.ts_ms}")
-        if i >= 50:
+        if i >= 5000:
             break
 
 if __name__ == "__main__":

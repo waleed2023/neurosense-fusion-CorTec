@@ -1,3 +1,4 @@
 bleak>=0.22
 grpcio>=1.64
 grpcio-tools>=1.64
+asciichartpy>=1.5
