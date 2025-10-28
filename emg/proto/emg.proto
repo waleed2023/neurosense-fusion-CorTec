@@ -2,15 +2,14 @@ syntax = "proto3";
 package emg;
 
 option java_multiple_files = true;
-option java_package = "dev.yourcompany.emg";
+option java_package = "dev.cortec-neuro.emg";
 option java_outer_classname = "EmgProto";
 
-// Optionaler Subscribe-Parameter (z.B. Drosselung)
+// ===== EMG =====
 message SubscribeRequest {
   uint32 max_rate_hz = 1; // 0 = keine Drosselung
 }
 
-// EMG-Sample
 message EmgSample {
   uint32 value = 1;   // 0..1000 (clamped)
   uint64 ts_ms = 2;   // epoch ms
@@ -19,4 +18,23 @@ message EmgSample {
 
 service Emg {
   rpc StreamEmg(SubscribeRequest) returns (stream EmgSample);
+}
+
+// ===== ACCEL =====
+message AccelSubscribeRequest {
+  uint32 max_rate_hz = 1; // 0 = keine Drosselung
+  // Optional: axis=0..3 (0=mag,1=x,2=y,3=z) — nur Client-Hinweis
+  uint32 axis = 2;
+}
+
+message AccelSample {
+  double ax = 1;   // g
+  double ay = 2;   // g
+  double az = 3;   // g
+  double mag = 4;  // g (sqrt)
+  uint64 ts_ms = 5;
+}
+
+service Accel {
+  rpc StreamAccel(AccelSubscribeRequest) returns (stream AccelSample);
 }

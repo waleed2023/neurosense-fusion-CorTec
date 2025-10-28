@@ -17,5 +17,16 @@ GRPC_PORT = int(os.getenv("GRPC_PORT", "50051"))
 CLIENT_QUEUE_MAX = int(os.getenv("CLIENT_QUEUE_MAX", "512"))  # max Samples pro Client
 DROP_OLDEST_ON_FULL = os.getenv("DROP_OLDEST_ON_FULL", "1") not in ("0", "false", "False")
 
+
+
+# ===== I2C / ACCEL (LSM6DSx) =====
+I2C_BUS = int(os.getenv("I2C_BUS", "1"))
+I2C_ADDR = int(os.getenv("I2C_ADDR", "0x6B"), 16)  # evtl. 0x6A
+ACCEL_ODR_HZ = float(os.getenv("ACCEL_ODR_HZ", "104"))  # Poll-Rate
+ACCEL_FS_G = int(os.getenv("ACCEL_FS_G", "2"))          # 2,4,8,16 (wir nutzen 2g)
+
+LOG_PREFIX = os.getenv("LOG_PREFIX", "[emg]")
+
+
 # Sonstiges
 LOG_PREFIX = os.getenv("LOG_PREFIX", "[emg]")
