@@ -2,4 +2,7 @@ bleak>=0.22
 grpcio>=1.64
 grpcio-tools>=1.64
 asciichartpy>=1.5
+<<<<<<< HEAD
 smbus2>=0.4
+=======
+>>>>>>> d63588d8a6a607dac99270a0fc482b554295d6ca
