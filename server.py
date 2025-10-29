@@ -27,7 +27,7 @@ async def serve():
     emg_pb2_grpc.add_AccelServicer_to_server(AccelService(acc_b), server)
 
     bind_addr = f"{GRPC_HOST}:{GRPC_PORT}"
-    server.add_insecure_port(bind_addr)  # TODO: TLS in Produktion
+    server.add_insecure_port(bind_addr)
     await server.start()
     sys.stderr.write(f"{LOG_PREFIX} gRPC Server läuft auf {bind_addr}\n")
 
