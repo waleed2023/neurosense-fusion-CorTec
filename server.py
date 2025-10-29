@@ -7,7 +7,7 @@ import grpc
 from emg.config import GRPC_HOST, GRPC_PORT, LOG_PREFIX
 from emg.broadcaster import Broadcaster
 from emg.ble_manager import BLEManager
-from emg.service import EmgService
+from emg.emg_service import EmgService
 from emg.accel_manager import AccelManager
 from emg.accel_service import AccelService
 from emg.proto import emg_pb2_grpc
