@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 import asyncio
 from typing import Callable, Awaitable, List, Optional, Dict, Any
-
+from dbus_next.errors import DBusError
 from dbus_next.aio import MessageBus
 from dbus_next import Variant, BusType
 from dbus_next.service import ServiceInterface, method, dbus_property
@@ -437,6 +437,11 @@ class BleGattApp:
         self.bus.export(self._adv.path, self._adv)
 
         adv_mgr = adapter_obj.get_interface(LE_ADV_MANAGER_IFACE)
+        try:
+            await adv_mgr.call_register_advertisement(self._adv.path, {})
+        except DBusError as e:
+            print(f"[emg] Failed to register advertisement: {e}")
+            raise
         await adv_mgr.call_register_advertisement(self._adv.path, {})
         # Nothing more to do here. The caller is expected to keep the
         # event loop running (e.g. by waiting on signals or tasks).
