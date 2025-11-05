@@ -195,7 +195,7 @@ class WriteChar(ServiceInterface):
 class BleAdvertisement(ServiceInterface):
     """
     Minimal LE Advertisement object implementing org.bluez.LEAdvertisement1.
-    This object is used by BlueZ via LEAdvertisingManager1.RegisterAdvertisement().
+    BlueZ mag es oft lieber, wenn man nur das Nötigste setzt.
     """
 
     def __init__(self, path: str, local_name: str, service_uuids: List[str]):
@@ -219,45 +219,7 @@ class BleAdvertisement(ServiceInterface):
 
     @dbus_property(access=PropertyAccess.READ)
     def Includes(self) -> "as":
-        # E.g. include TX power in advertising data.
-        return ["tx-power"]
-
-    @dbus_property(access=PropertyAccess.READ)
-    def Appearance(self) -> "q":
-        # 0 = no specific appearance.
-        return 0
-
-    @dbus_property(access=PropertyAccess.READ)
-    def Duration(self) -> "q":
-        # 0 = advertise indefinitely until stopped.
-        return 0
-
-    @dbus_property(access=PropertyAccess.READ)
-    def Timeout(self) -> "q":
-        # 0 = no timeout handling here.
-        return 0
-
-    @dbus_property(access=PropertyAccess.READ)
-    def ManufacturerData(self) -> "a{qv}":
-        """
-        Optional. Empty dict means: no manufacturer specific data.
-        Type: dict<uint16, variant>
-        """
-        return {}
-
-    @dbus_property(access=PropertyAccess.READ)
-    def ServiceData(self) -> "a{sv}":
-        """
-        Optional. Empty dict means: no service data.
-        Type: dict<string, variant>
-        """
-        return {}
-
-    @dbus_property(access=PropertyAccess.READ)
-    def SolicitUUIDs(self) -> "as":
-        """
-        Optional. List of UUIDs to solicit (not used here).
-        """
+        # Erstmal nichts extra bewerben – keep it simple.
         return []
 
     @method()
@@ -431,6 +393,7 @@ class BleGattApp:
         await gatt_mgr.call_register_application(self._app_root.path, {})
 
         # Prepare and export LE advertisement.
+        # Prepare and export LE advertisement.
         service_uuids = [svc.uuid for svc in self.services]
         adv_path = "/org/bluez/protoble/advertisement0"
         self._adv = BleAdvertisement(adv_path, self.local_name, service_uuids)
@@ -440,7 +403,6 @@ class BleGattApp:
         try:
             await adv_mgr.call_register_advertisement(self._adv.path, {})
         except DBusError as e:
-            # HIER: detaillierte Info ausgeben
             print(
                 "[emg] Failed to register advertisement: "
                 f"type={e.type}, text={e.text}"
