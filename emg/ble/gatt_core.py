@@ -84,7 +84,8 @@ class NotifyChar(ServiceInterface):
         self.uuid = uuid
         self.service = service
         self.flags: List[str] = ["read", "notify"]
-        self._value: List[int] = []
+        # BlueZ / dbus-next expect 'ay' as Python 'bytes'
+        self._value: bytes = b""
         self._notifying: bool = False
 
     @dbus_property(access=PropertyAccess.READ)
@@ -101,7 +102,7 @@ class NotifyChar(ServiceInterface):
 
     @dbus_property(access=PropertyAccess.READ)
     def Value(self) -> "ay":
-        # BlueZ expects a list of bytes (0–255).
+        # Return raw bytes as required for 'ay'
         return self._value
 
     @method()
@@ -131,10 +132,11 @@ class NotifyChar(ServiceInterface):
         Update the characteristic value and emit a PropertiesChanged signal
         if notifications are currently enabled.
         """
-        self._value = list(data)
+        # Store as bytes (dbus-next will wrap this for signature 'ay')
+        self._value = data
         if self._notifying:
-            # Inform BlueZ that the Value property changed.
             self.emit_properties_changed({"Value": self._value}, [])
+
 
 
 class WriteChar(ServiceInterface):
