@@ -195,6 +195,7 @@ class WriteChar(ServiceInterface):
 class BleAdvertisement(ServiceInterface):
     """
     Minimal LE Advertisement object implementing org.bluez.LEAdvertisement1.
+    This object is used by BlueZ via LEAdvertisingManager1.RegisterAdvertisement().
     """
 
     def __init__(self, path: str, local_name: str, service_uuids: List[str]):
@@ -236,12 +237,36 @@ class BleAdvertisement(ServiceInterface):
         # 0 = no timeout handling here.
         return 0
 
+    @dbus_property(access=PropertyAccess.READ)
+    def ManufacturerData(self) -> "a{qv}":
+        """
+        Optional. Empty dict means: no manufacturer specific data.
+        Type: dict<uint16, variant>
+        """
+        return {}
+
+    @dbus_property(access=PropertyAccess.READ)
+    def ServiceData(self) -> "a{sv}":
+        """
+        Optional. Empty dict means: no service data.
+        Type: dict<string, variant>
+        """
+        return {}
+
+    @dbus_property(access=PropertyAccess.READ)
+    def SolicitUUIDs(self) -> "as":
+        """
+        Optional. List of UUIDs to solicit (not used here).
+        """
+        return []
+
     @method()
     def Release(self) -> None:
         """
         Called by BlueZ when the advertisement is unregistered.
         """
         print("[emg] Advertisement released")
+
 
 
 class GattApplication(ServiceInterface):
@@ -407,11 +432,11 @@ class BleGattApp:
 
         # Prepare and export LE advertisement.
         service_uuids = [svc.uuid for svc in self.services]
-        self._adv = BleAdvertisement("/adv/protoble", self.local_name, service_uuids)
+        adv_path = "/org/bluez/protoble/advertisement0"
+        self._adv = BleAdvertisement(adv_path, self.local_name, service_uuids)
         self.bus.export(self._adv.path, self._adv)
 
         adv_mgr = adapter_obj.get_interface(LE_ADV_MANAGER_IFACE)
         await adv_mgr.call_register_advertisement(self._adv.path, {})
-
         # Nothing more to do here. The caller is expected to keep the
         # event loop running (e.g. by waiting on signals or tasks).
