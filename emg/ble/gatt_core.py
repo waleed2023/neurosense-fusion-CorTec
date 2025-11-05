@@ -192,13 +192,11 @@ class BleGattApp:
                 self.bus.export(ch.path, ch)
 
         # GATT application registration
-        obj = await self.bus.get_proxy_object(
-            BLUEZ,
-            adapter_path,
-            await self.bus.introspect(BLUEZ, adapter_path),
-        )
+        node = await self.bus.introspect(BLUEZ, adapter_path)
+        obj = self.bus.get_proxy_object(BLUEZ, adapter_path, node)
         gatt_mgr = obj.get_interface(GATT_MANAGER_IFACE)
         await gatt_mgr.call_register_application("/app", {})
+
 
         # Advertising (hey Bluetooth, im hier :=D )
         class Adv(ServiceInterface):
