@@ -440,8 +440,13 @@ class BleGattApp:
         try:
             await adv_mgr.call_register_advertisement(self._adv.path, {})
         except DBusError as e:
-            print(f"[emg] Failed to register advertisement: {e}")
+            # HIER: detaillierte Info ausgeben
+            print(
+                "[emg] Failed to register advertisement: "
+                f"type={e.type}, text={e.text}"
+            )
             raise
-        await adv_mgr.call_register_advertisement(self._adv.path, {})
-        # Nothing more to do here. The caller is expected to keep the
-        # event loop running (e.g. by waiting on signals or tasks).
+
+        # NIX MEHR DANACH – kein zweiter Aufruf!
+        # Event Loop am Leben halten macht der Aufrufer.
+
