@@ -174,13 +174,16 @@ class BleGattApp:
             p = f"/org/bluez/{n}"
             try:
                 node = await self.bus.introspect(BLUEZ, p)
-                if ADAPTER_IFACE in [i.name for i in node.interfaces]:
-                    adapter_path = p
-                    break
             except Exception:
                 continue
+            for iface in node.interfaces:
+                if iface.name == ADAPTER_IFACE:
+                    adapter_path = p
+                    break
+
         if not adapter_path:
-            raise RuntimeError("no Bluetooth Adapter found")
+            adapter_path = "/org/bluez/hci0"
+            print(f"[emg] Using fallback Bluetooth adapter path: {adapter_path}")
 
         # Services export
         for svc in self.services:
