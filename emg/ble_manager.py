@@ -3,18 +3,16 @@ import time
 import struct
 import asyncio
 from typing import Optional
-
 from bleak import BleakClient, BleakScanner
-
 from .config import ANALOG_CHAR, BATTERY_CHAR, TARGET_MAC, TARGET_NAME, VALUE_MAX, LOG_PREFIX
-from .proto import emg_pb2  # nach protoc-Compile vorhanden
+from .proto import emg_pb2
 
 def now_ms() -> int:
     return int(time.time() * 1000)
 
 class BLEManager:
     """
-    Liest EMG-Werte über BLE (Bleak) und published EmgSample an den Broadcaster.
+    read EMG Values via BLE (Bleak) and publish EmgSample to the Broadcaster.
     """
     def __init__(self, broadcaster):
         self.broadcaster = broadcaster
@@ -61,7 +59,7 @@ class BLEManager:
                     await asyncio.sleep(backoff); backoff = min(backoff * 2, 10)
                     continue
 
-                sys.stderr.write(f"{LOG_PREFIX} Verbinde zu {mac} ...\n")
+                sys.stderr.write(f"{LOG_PREFIX} connected to {mac} ...\n")
                 async with BleakClient(mac, timeout=15.0) as c:
                     self._client = c
                     self._battery = 255
@@ -74,7 +72,7 @@ class BLEManager:
                         pass
 
                     await c.start_notify(ANALOG_CHAR, self._on_emg)
-                    sys.stderr.write(f"{LOG_PREFIX} EMG Notify aktiv\n")
+                    sys.stderr.write(f"{LOG_PREFIX} EMG Notify active\n")
                     backoff = 1.0
 
                     while c.is_connected and not self._stop.is_set():

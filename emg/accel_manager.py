@@ -19,7 +19,7 @@ REG_CTRL2_G         = 0x11
 REG_CTRL3_C         = 0x12
 OUTX_L_XL           = 0x28
 
-WHOAMI_EXPECTED = {0x6A, 0x6B, 0x69}  # diverse LSM6 Varianten
+WHOAMI_EXPECTED = {0x6A, 0x6B, 0x69}
 
 def to_s16(lo, hi):
     v = (hi << 8) | lo
@@ -39,8 +39,8 @@ def scale_factor_g(fs_g: int) -> float:
 
 class AccelManager:
     """
-    Pollt den LSM6DSx per I²C und published AccelSample via Broadcaster.
-    Läuft als asyncio-Task; der smbus-Zugriff ist synchron, wir poll’en einfach in der Schleife.
+    Polls the LSM6DSx via I²C and publishes AccelSample via the Broadcaster.
+    Runs as an asyncio task; smbus access is synchronous, so polling is done in the loop.
     """
     def __init__(self, broadcaster):
         self.broadcaster = broadcaster
@@ -66,10 +66,9 @@ class AccelManager:
         elif ACCEL_ODR_HZ >= 208:  odr_bits = 0x50
         elif ACCEL_ODR_HZ >= 104:  odr_bits = 0x40
         elif ACCEL_ODR_HZ >= 52:   odr_bits = 0x30
-        elif ACCEL_ODR_HZ >= 26:   odr_bits = 0x20
         else:                      odr_bits = 0x10
 
-        # FS Bits (CTRL1_XL[5:4]): 00=±2g, 10=±4g, 11=±8g, 01=±16g (je nach Datenblattvariante)
+        # FS Bits (CTRL1_XL[5:4]): 00=±2g, 10=±4g, 11=±8g, 01=±16g (depending on data sheet variant)
         fs_bits = 0x00
         if ACCEL_FS_G == 4:  fs_bits = 0x10
         if ACCEL_FS_G == 8:  fs_bits = 0x18
@@ -77,12 +76,12 @@ class AccelManager:
 
         bus.write_byte_data(addr, REG_CTRL1_XL, odr_bits | fs_bits)
 
-        # Gyro optional (hier nur ausgeschaltet/egal), aber setzen wir neutral
+        # Disable gyro
         bus.write_byte_data(addr, REG_CTRL2_G, 0x00)
 
         who = bus.read_byte_data(addr, REG_WHO_AM_I)
         if who not in WHOAMI_EXPECTED:
-            sys.stderr.write(f"{LOG_PREFIX} Warnung: WHO_AM_I=0x{who:02X} ungewöhnlich\n")
+            sys.stderr.write(f"{LOG_PREFIX} Warning: WHO_AM_I=0x{who:02X}\n")
 
     def _read_accel_g(self, bus: SMBus, addr: int):
         a = bus.read_i2c_block_data(addr, OUTX_L_XL, 6)
@@ -102,7 +101,7 @@ class AccelManager:
             with SMBus(I2C_BUS) as bus:
                 self._bus = bus
                 self._init_sensor(bus, I2C_ADDR)
-                sys.stderr.write(f"{LOG_PREFIX} Accel-Streaming gestartet (I2C bus={I2C_BUS} addr=0x{I2C_ADDR:02X})\n")
+                sys.stderr.write(f"{LOG_PREFIX} Accel-Streaming started (I2C bus={I2C_BUS} addr=0x{I2C_ADDR:02X})\n")
                 last = 0.0
                 while not self._stop.is_set():
                     # Poll
@@ -110,7 +109,7 @@ class AccelManager:
                     sample = emg_pb2.AccelSample(ax=AX, ay=AY, az=AZ, mag=MAG, ts_ms=int(time.time()*1000))
                     await self.broadcaster.publish(sample)
 
-                    # Sleep so, dass ca. ODR_HZ erreicht wird
+                    # Sleep to achieve approx. ODR_HZ
                     now = time.perf_counter()
                     if last == 0.0:
                         last = now
@@ -121,4 +120,4 @@ class AccelManager:
         except asyncio.CancelledError:
             pass
         except Exception as e:
-            sys.stderr.write(f"{LOG_PREFIX} Accel-Fehler: {e}\n")
+            sys.stderr.write(f"{LOG_PREFIX} Accel-Error: {e}\n")
