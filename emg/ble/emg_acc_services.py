@@ -1,39 +1,41 @@
 import asyncio
-from typing import Callable, Awaitable, Optional
+from typing import Optional, Callable, Awaitable
 from emg.broadcaster import Broadcaster
 from emg.proto import emg_pb2
 from .gatt_core import GattService, NotifyChar, WriteChar, RpcStream
 
-# UUIDs for EMG service (BLE)
+
+# UUIDs for EMG BLE service and characteristics
 EMG_SVC   = "f8c94a20-9f1f-4f5a-8ad1-3d1b7c0a1000"
-EMG_PARAM = "f8c94a20-9f1f-4f5a-8ad1-3d1b7c0a1001"
-EMG_RET   = "f8c94a20-9f1f-4f5a-8ad1-3d1b7c0a1002"
+EMG_PARAM = "f8c94a20-9f1f-4f5a-8ad1-3d1b7c0a1001"  # Write (SubscribeRequest)
+EMG_RET   = "f8c94a20-9f1f-4f5a-8ad1-3d1b7c0a1002"  # Notify (EmgSample stream)
 
-# UUIDs for ACC service (BLE)
+# UUIDs for ACC BLE service and characteristics
 ACC_SVC   = "f8c94a20-9f1f-4f5a-8ad1-3d1b7c0a2000"
-ACC_PARAM = "f8c94a20-9f1f-4f5a-8ad1-3d1b7c0a2001"
-ACC_RET   = "f8c94a20-9f1f-4f5a-8ad1-3d1b7c0a2002"
+ACC_PARAM = "f8c94a20-9f1f-4f5a-8ad1-3d1b7c0a2001"  # Write (AccelSubscribeRequest)
+ACC_RET   = "f8c94a20-9f1f-4f5a-8ad1-3d1b7c0a2002"  # Notify (AccelSample stream)
 
 
-async def _emg_loop(
-    send: Callable[[bytes], Awaitable[None]],
+async def _emg_stream_loop(
+    send_bytes: Callable[[bytes], Awaitable[None]],
     broadcaster: Broadcaster,
     req_bytes: bytes,
 ) -> None:
     """
-    Reads EMG samples from the broadcaster and sends them as protobuf bytes
-    via the send() function (→ NotifyChar).
-    The behavior is modeled after EmgService.StreamEmg.
+    Internal EMG streaming loop.
+
+    - Decodes SubscribeRequest from 'req_bytes'.
+    - Subscribes to the EMG Broadcaster.
+    - Optionally throttles the outgoing sample rate (max_rate_hz).
+    - Serializes EmgSample messages as Protobuf and sends them via 'send_bytes'.
     """
-    # Parse request (SubscribeRequest) if present
     req = emg_pb2.SubscribeRequest()
     if req_bytes:
         try:
             req.ParseFromString(req_bytes)
-        except Exception:
-            # Invalid payload → continue with default request
-            pass
-
+        except Exception as exc:
+            # Invalid payload: log and continue with defaults
+            print(f"[emg] Warning: failed to parse EMG SubscribeRequest: {exc!r}")
 
     max_rate_hz = req.max_rate_hz or 0
     interval = 1.0 / max_rate_hz if max_rate_hz > 0 else 0.0
@@ -46,37 +48,41 @@ async def _emg_loop(
         while True:
             sample: emg_pb2.EmgSample = await queue.get()
 
-            # optional throttling like in gRPC server
+            # Optional rate limiting similar to the gRPC server implementation
             if interval > 0.0:
                 now = loop.time()
                 if (now - last_ts) < interval:
                     continue
                 last_ts = now
 
-            await send(sample.SerializeToString())
+            await send_bytes(sample.SerializeToString())
 
     except asyncio.CancelledError:
-        # Task was cancelled (e.g. new subscription) → propagate upwards
+        # Stream canceled by RpcStream.stop()
         raise
     finally:
         await broadcaster.unsubscribe(queue)
 
 
-async def _accel_loop(
-    send: Callable[[bytes], Awaitable[None]],
+async def _accel_stream_loop(
+    send_bytes: Callable[[bytes], Awaitable[None]],
     broadcaster: Broadcaster,
     req_bytes: bytes,
 ) -> None:
     """
-    Reads Accel samples from the broadcaster and sends them as protobuf bytes.
-    Analogous to AccelService.StreamAccel.
+    Internal accelerometer streaming loop.
+
+    - Decodes AccelSubscribeRequest from 'req_bytes'.
+    - Subscribes to the accelerometer Broadcaster.
+    - Optionally throttles the outgoing sample rate (max_rate_hz).
+    - Serializes AccelSample messages as Protobuf and sends them via 'send_bytes'.
     """
     req = emg_pb2.AccelSubscribeRequest()
     if req_bytes:
         try:
             req.ParseFromString(req_bytes)
-        except Exception:
-            pass
+        except Exception as exc:
+            print(f"[emg] Warning: failed to parse ACC SubscribeRequest: {exc!r}")
 
     max_rate_hz = req.max_rate_hz or 0
     interval = 1.0 / max_rate_hz if max_rate_hz > 0 else 0.0
@@ -95,7 +101,7 @@ async def _accel_loop(
                     continue
                 last_ts = now
 
-            await send(sample.SerializeToString())
+            await send_bytes(sample.SerializeToString())
 
     except asyncio.CancelledError:
         raise
@@ -105,60 +111,100 @@ async def _accel_loop(
 
 def build_emg_service(bus, emg_broadcaster: Broadcaster) -> GattService:
     """
-    Baut den EMG-BLE-Service im ProtoBLE-Stil:
+    Build the EMG BLE service in a ProtoBLE-style mapping:
 
-    - Service-UUID: EMG_SVC
-    - Write-Characteristic (Param):  EMG_PARAM, nimmt SubscribeRequest (Protobuf)
-    - Notify-Characteristic (Return): EMG_RET, sendet EmgSample (Protobuf-Stream)
+      - Service UUID:  EMG_SVC
+      - Param UUID:    EMG_PARAM (Write, takes SubscribeRequest)
+      - Return UUID:   EMG_RET   (Notify, streams EmgSample)
+
+    The client is expected to:
+      1. Write a SubscribeRequest to EMG_PARAM.
+      2. Subscribe to notifications on EMG_RET.
+      3. Decode each notification as EmgSample.
     """
     svc = GattService("/app/emg", EMG_SVC)
-    ret_char = NotifyChar(bus, "/app/emg/ret", EMG_RET, svc)
 
+    # Notify characteristic for outgoing EMG samples
+    ret_char = NotifyChar("/app/emg/ret", EMG_RET, svc)
+
+    # RpcStream to manage the EMG streaming loop
     stream: Optional[RpcStream] = None
 
     def on_param(data: bytes) -> None:
+        """
+        Called whenever the client writes to EMG_PARAM.
+
+        'data' is expected to be a serialized SubscribeRequest.
+        We start (or restart) the EMG stream with these parameters.
+        """
         nonlocal stream
 
-        # Stop previous stream if any
+        # Stop any previously running stream for this client.
         if stream is not None:
             stream.stop()
 
         async def producer() -> None:
-            await _emg_loop(lambda b: ret_char.notify(b), emg_broadcaster, data)
+            await _emg_stream_loop(
+                send_bytes=lambda b: ret_char.notify(b),
+                broadcaster=emg_broadcaster,
+                req_bytes=data,
+            )
 
         stream = RpcStream(producer)
         stream.start()
 
-    param_char = WriteChar(bus, "/app/emg/param", EMG_PARAM, svc, on_param)
+    # Write characteristic for SubscribeRequest
+    param_char = WriteChar("/app/emg/param", EMG_PARAM, svc, on_param)
+
     svc.chars += [param_char, ret_char]
     return svc
 
 
 def build_acc_service(bus, acc_broadcaster: Broadcaster) -> GattService:
     """
-    Builds the ACC BLE service in ProtoBLE style:
+    Build the accelerometer BLE service in a ProtoBLE-style mapping:
 
-    - Service UUID: ACC_SVC
-    - Write Characteristic (Param):  ACC_PARAM, accepts AccelSubscribeRequest (protobuf)
-    - Notify Characteristic (Return): ACC_RET, sends AccelSample (protobuf stream)
+      - Service UUID:  ACC_SVC
+      - Param UUID:    ACC_PARAM (Write, takes AccelSubscribeRequest)
+      - Return UUID:   ACC_RET   (Notify, streams AccelSample)
+
+    The client is expected to:
+      1. Write an AccelSubscribeRequest to ACC_PARAM.
+      2. Subscribe to notifications on ACC_RET.
+      3. Decode each notification as AccelSample.
     """
     svc = GattService("/app/acc", ACC_SVC)
-    ret_char = NotifyChar(bus, "/app/acc/ret", ACC_RET, svc)
 
+    # Notify characteristic for outgoing accelerometer samples
+    ret_char = NotifyChar("/app/acc/ret", ACC_RET, svc)
+
+    # RpcStream to manage the accelerometer streaming loop
     stream: Optional[RpcStream] = None
 
     def on_param(data: bytes) -> None:
+        """
+        Called whenever the client writes to ACC_PARAM.
+
+        'data' is expected to be a serialized AccelSubscribeRequest.
+        We start (or restart) the accelerometer stream with these parameters.
+        """
         nonlocal stream
 
         if stream is not None:
             stream.stop()
 
         async def producer() -> None:
-            await _accel_loop(lambda b: ret_char.notify(b), acc_broadcaster, data)
+            await _accel_stream_loop(
+                send_bytes=lambda b: ret_char.notify(b),
+                broadcaster=acc_broadcaster,
+                req_bytes=data,
+            )
 
         stream = RpcStream(producer)
         stream.start()
 
-    param_char = WriteChar(bus, "/app/acc/param", ACC_PARAM, svc, on_param)
+    # Write characteristic for AccelSubscribeRequest
+    param_char = WriteChar("/app/acc/param", ACC_PARAM, svc, on_param)
+
     svc.chars += [param_char, ret_char]
     return svc

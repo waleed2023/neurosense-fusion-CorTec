@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 import asyncio
-from typing import Callable, Awaitable, List, Optional
+from typing import Callable, Awaitable, List, Optional, Dict, Any
+
 from dbus_next.aio import MessageBus
 from dbus_next import Variant, BusType
 from dbus_next.service import ServiceInterface, method, dbus_property
@@ -13,14 +14,45 @@ LE_ADV_MANAGER_IFACE    = "org.bluez.LEAdvertisingManager1"
 GATT_SERVICE_IFACE      = "org.bluez.GattService1"
 GATT_CHAR_IFACE         = "org.bluez.GattCharacteristic1"
 PROPERTIES_IFACE        = "org.freedesktop.DBus.Properties"
+OBJ_MANAGER_IFACE       = "org.freedesktop.DBus.ObjectManager"
 ADVERTISING_IFACE       = "org.bluez.LEAdvertisement1"
 
 
+class RpcStream:
+    """
+    Small helper to manage a long-running async producer task.
+
+    It is used for streaming loops (e.g. EMG / ACC) so they can be
+    started and cancelled cleanly when the client subscribes/unsubscribes.
+    """
+
+    def __init__(self, coro_factory: Callable[[], Awaitable[None]]):
+        self._coro_factory = coro_factory
+        self._task: Optional[asyncio.Task] = None
+
+    def start(self) -> None:
+        """Start (or restart) the underlying async task."""
+        self.stop()
+        loop = asyncio.get_running_loop()
+        self._task = loop.create_task(self._coro_factory())
+
+    def stop(self) -> None:
+        """Cancel the running task if any."""
+        if self._task is not None and not self._task.done():
+            self._task.cancel()
+        self._task = None
+
+
 class GattService(ServiceInterface):
-    def __init__(self, path: str, uuid: str):
+    """
+    Minimal implementation of org.bluez.GattService1 for a local GATT service.
+    """
+
+    def __init__(self, path: str, uuid: str, primary: bool = True):
         super().__init__(GATT_SERVICE_IFACE)
         self.path = path
         self.uuid = uuid
+        self.primary = primary
         self.chars: List[ServiceInterface] = []
 
     @dbus_property(access=PropertyAccess.READ)
@@ -29,28 +61,31 @@ class GattService(ServiceInterface):
 
     @dbus_property(access=PropertyAccess.READ)
     def Primary(self) -> "b":
-        return True
+        return self.primary
 
     @dbus_property(access=PropertyAccess.READ)
-    def Characteristics(self) -> "ao":
-        return [c.path for c in self.chars]
+    def Includes(self) -> "ao":
+        # No included services.
+        return []
 
 
 class NotifyChar(ServiceInterface):
     """
-    Generic Notify-Characteristic (read + notify)
+    Characteristic that supports 'read' and 'notify'.
+
+    The application calls `await notify(bytes)` to push a new value.
+    If a client has called StartNotify, we emit a PropertiesChanged
+    signal on the 'Value' property so BlueZ will send a notification.
     """
-    def __init__(self, bus, path, uuid: str, service: GattService, max_len: int = 180):
+
+    def __init__(self, path: str, uuid: str, service: GattService):
         super().__init__(GATT_CHAR_IFACE)
-        self.bus = bus
         self.path = path
         self.uuid = uuid
         self.service = service
-        self.flags = ["read", "notify"]
-        self._value = bytearray()
-        self.notifying = False
-        self.subscribers = 0
-        self.max_len = max_len
+        self.flags: List[str] = ["read", "notify"]
+        self._value: List[int] = []
+        self._notifying: bool = False
 
     @dbus_property(access=PropertyAccess.READ)
     def UUID(self) -> "s":
@@ -64,59 +99,67 @@ class NotifyChar(ServiceInterface):
     def Flags(self) -> "as":
         return self.flags
 
+    @dbus_property(access=PropertyAccess.READ)
+    def Value(self) -> "ay":
+        # BlueZ expects a list of bytes (0–255).
+        return self._value
+
     @method()
     def ReadValue(self, options: "a{sv}") -> "ay":
-        return bytes(self._value)
+        """
+        Basic ReadValue implementation.
+        Returns the last value that was notified.
+        """
+        return self._value
 
     @method()
-    def StartNotify(self):
-        self.notifying = True
-        self.subscribers += 1
+    def StartNotify(self) -> None:
+        """
+        Called by the client when it subscribes for notifications.
+        """
+        self._notifying = True
 
     @method()
-    def StopNotify(self):
-        self.subscribers = max(0, self.subscribers - 1)
-        self.notifying = self.subscribers > 0
+    def StopNotify(self) -> None:
+        """
+        Called by the client when it unsubscribes from notifications.
+        """
+        self._notifying = False
 
-    async def notify(self, data: bytes):
-        if not self.notifying or self.subscribers == 0:
-            return
-        if len(data) > self.max_len:
-            return
-        self._value = bytearray(data)
-        props = {"Value": Variant("ay", list(self._value))}
-        await self.bus.call(
-            message=self.bus._message(
-                destination=None,
-                path=self.path,
-                interface=PROPERTIES_IFACE,
-                member="PropertiesChanged",
-                signature="sa{sv}as",
-                body=[GATT_CHAR_IFACE, props, []],
-            )
-        )
+    async def notify(self, data: bytes) -> None:
+        """
+        Update the characteristic value and emit a PropertiesChanged signal
+        if notifications are currently enabled.
+        """
+        self._value = list(data)
+        if self._notifying:
+            # Inform BlueZ that the Value property changed.
+            self.emit_properties_changed({"Value": self._value}, [])
 
 
 class WriteChar(ServiceInterface):
     """
-    Generic Write-Without-Response Characteristic.
-    Calls a callback with the written bytes.
+    Characteristic that supports 'write' / 'write-without-response'.
+
+    When a client writes to this characteristic, the provided callback
+    is invoked with the raw bytes.
     """
+
     def __init__(
         self,
-        bus,
-        path,
+        path: str,
         uuid: str,
         service: GattService,
         on_write: Callable[[bytes], None],
+        flags: Optional[List[str]] = None,
     ):
         super().__init__(GATT_CHAR_IFACE)
-        self.bus = bus
         self.path = path
         self.uuid = uuid
         self.service = service
-        self.flags = ["write-without-response"]
         self._on_write = on_write
+        # Allow overriding flags, but provide sensible defaults.
+        self.flags = flags or ["write", "write-without-response"]
 
     @dbus_property(access=PropertyAccess.READ)
     def UUID(self) -> "s":
@@ -131,98 +174,242 @@ class WriteChar(ServiceInterface):
         return self.flags
 
     @method()
-    def WriteValue(self, value: "ay", options: "a{sv}"):
+    def WriteValue(self, value: "ay", options: "a{sv}") -> None:
+        """
+        Called by the client when it writes to this characteristic.
+        """
         data = bytes(value)
-        loop = asyncio.get_event_loop()
-        loop.call_soon_threadsafe(self._on_write, data)
+        self._on_write(data)
+
+    @method()
+    def ReadValue(self, options: "a{sv}") -> "ay":
+        """
+        Optional ReadValue implementation. For a pure write-only
+        characteristic we can just return an empty value.
+        """
+        return []
 
 
-class RpcStream:
+class BleAdvertisement(ServiceInterface):
     """
-    Encapsulates a running async producer task (e.g., an EMG/ACC loop).
+    Minimal LE Advertisement object implementing org.bluez.LEAdvertisement1.
     """
-    def __init__(self, coro_factory: Callable[[], Awaitable[None]]):
-        self._coro_factory = coro_factory
-        self._task: Optional[asyncio.Task] = None
 
-    def start(self):
-        self.stop()
-        self._task = asyncio.create_task(self._coro_factory())
+    def __init__(self, path: str, local_name: str, service_uuids: List[str]):
+        super().__init__(ADVERTISING_IFACE)
+        self.path = path
+        self._local_name = local_name
+        self._service_uuids = service_uuids
 
-    def stop(self):
-        if self._task and not self._task.done():
-            self._task.cancel()
+    @dbus_property(access=PropertyAccess.READ)
+    def Type(self) -> "s":
+        # 'peripheral' = connectable advertisement.
+        return "peripheral"
+
+    @dbus_property(access=PropertyAccess.READ)
+    def LocalName(self) -> "s":
+        return self._local_name
+
+    @dbus_property(access=PropertyAccess.READ)
+    def ServiceUUIDs(self) -> "as":
+        return self._service_uuids
+
+    @dbus_property(access=PropertyAccess.READ)
+    def Includes(self) -> "as":
+        # E.g. include TX power in advertising data.
+        return ["tx-power"]
+
+    @dbus_property(access=PropertyAccess.READ)
+    def Appearance(self) -> "q":
+        # 0 = no specific appearance.
+        return 0
+
+    @dbus_property(access=PropertyAccess.READ)
+    def Duration(self) -> "q":
+        # 0 = advertise indefinitely until stopped.
+        return 0
+
+    @dbus_property(access=PropertyAccess.READ)
+    def Timeout(self) -> "q":
+        # 0 = no timeout handling here.
+        return 0
+
+    @method()
+    def Release(self) -> None:
+        """
+        Called by BlueZ when the advertisement is unregistered.
+        """
+        print("[emg] Advertisement released")
+
+
+class GattApplication(ServiceInterface):
+    """
+    Simple application root implementing org.freedesktop.DBus.ObjectManager.
+
+    BlueZ uses GetManagedObjects() to discover all services and characteristics
+    that belong to this application under a given root path.
+    """
+
+    def __init__(self, path: str, services: List[GattService]):
+        super().__init__(OBJ_MANAGER_IFACE)
+        self.path = path
+        self._services = services
+
+    @method()
+    def GetManagedObjects(self) -> "a{oa{sa{sv}}}":
+        """
+        Return a dictionary describing all managed objects (services
+        and characteristics) in this application.
+
+        The structure is:
+            {
+              object_path: {
+                interface_name: {
+                  property_name: Variant(...)
+                  ...
+                },
+                ...
+              },
+              ...
+            }
+        """
+        managed: Dict[str, Dict[str, Dict[str, Variant]]] = {}
+
+        for svc in self._services:
+            # Service object description
+            svc_entry: Dict[str, Dict[str, Variant]] = {}
+            svc_props: Dict[str, Variant] = {
+                "UUID": Variant("s", svc.uuid),
+                "Primary": Variant("b", svc.primary),
+                "Includes": Variant("ao", []),
+            }
+            svc_entry[GATT_SERVICE_IFACE] = svc_props
+            managed[svc.path] = svc_entry
+
+            # Characteristic objects for this service
+            for ch in getattr(svc, "chars", []):
+                ch_entry: Dict[str, Dict[str, Variant]] = {}
+                # Only describe GATT characteristics here.
+                if isinstance(ch, ServiceInterface) and ch.introspection.name == GATT_CHAR_IFACE:
+                    flags = getattr(ch, "flags", [])
+                    ch_props: Dict[str, Variant] = {
+                        "UUID": Variant("s", getattr(ch, "uuid", "")),
+                        "Service": Variant("o", svc.path),
+                        "Flags": Variant("as", flags),
+                    }
+                    ch_entry[GATT_CHAR_IFACE] = ch_props
+                    managed[ch.path] = ch_entry
+
+        return managed
 
 
 class BleGattApp:
     """
-    Manages the D-Bus connection, adapter, services, and advertising.
-    Domain-specific services are supplied externally.
+    High-level helper that wires together:
+      - D-Bus system bus connection
+      - Bluetooth adapter discovery
+      - GATT application (services + characteristics)
+      - LE advertising
+
+    Usage:
+        app = BleGattApp(local_name="NeuroSense", services=[emg_svc, acc_svc])
+        await app.run()
     """
+
     def __init__(self, local_name: str, services: List[GattService]):
         self.local_name = local_name
         self.services = services
         self.bus: Optional[MessageBus] = None
+        self._adapter_path: Optional[str] = None
+        self._adv: Optional[BleAdvertisement] = None
+        self._app_root: Optional[GattApplication] = None
 
-    async def run(self):
-        self.bus = await MessageBus(bus_type=BusType.SYSTEM).connect()
+    async def _find_adapter_path(self) -> str:
+        """
+        Try to locate a Bluetooth adapter that implements org.bluez.Adapter1.
 
-        # Adapter finden
-        root = await self.bus.introspect(BLUEZ, "/")
-        adapter_path = None
-        for n in root.nodes:
-            p = f"/org/bluez/{n}"
-            try:
-                node = await self.bus.introspect(BLUEZ, p)
-            except Exception:
-                continue
-            for iface in node.interfaces:
-                if iface.name == ADAPTER_IFACE:
-                    adapter_path = p
+        If automatic discovery fails, fall back to '/org/bluez/hci0'
+        (common on Raspberry Pi) and raise if that also fails.
+        """
+        assert self.bus is not None
+
+        # Try to discover adapter via ObjectManager on '/'
+        try:
+            root = await self.bus.introspect(BLUEZ, "/")
+        except Exception:
+            root = None
+
+        adapter_path: Optional[str] = None
+
+        if root is not None:
+            for n in root.nodes:
+                candidate = f"/org/bluez/{n}"
+                try:
+                    node = await self.bus.introspect(BLUEZ, candidate)
+                except Exception:
+                    continue
+
+                for iface in node.interfaces:
+                    if iface.name == ADAPTER_IFACE:
+                        adapter_path = candidate
+                        break
+                if adapter_path:
                     break
 
-        if not adapter_path:
-            adapter_path = "/org/bluez/hci0"
-            print(f"[emg] Using fallback Bluetooth adapter path: {adapter_path}")
+        # Fallback to hci0 if discovery did not find anything.
+        if adapter_path is None:
+            fallback = "/org/bluez/hci0"
+            try:
+                await self.bus.introspect(BLUEZ, fallback)
+                print(f"[emg] Using fallback Bluetooth adapter path: {fallback}")
+                adapter_path = fallback
+            except Exception as e:
+                raise RuntimeError(f"no Bluetooth Adapter found ({e})")
 
-        # Services export
+        return adapter_path
+
+    async def run(self) -> None:
+        """
+        Connect to the system bus, export services and advertisement,
+        register the GATT application and start advertising.
+        """
+        # Connect to the system bus where BlueZ lives.
+        self.bus = await MessageBus(bus_type=BusType.SYSTEM).connect()
+
+        # Find an adapter.
+        self._adapter_path = await self._find_adapter_path()
+
+        # Ensure the adapter is powered on.
+        node = await self.bus.introspect(BLUEZ, self._adapter_path)
+        adapter_obj = self.bus.get_proxy_object(BLUEZ, self._adapter_path, node)
+        props_iface = adapter_obj.get_interface(PROPERTIES_IFACE)
+
+        powered_variant = await props_iface.call_get(ADAPTER_IFACE, "Powered")
+        powered = bool(powered_variant.value)
+        if not powered:
+            await props_iface.call_set(ADAPTER_IFACE, "Powered", Variant("b", True))
+
+        # Export the application root (ObjectManager).
+        self._app_root = GattApplication("/app", self.services)
+        self.bus.export(self._app_root.path, self._app_root)
+
+        # Export all services and characteristics.
         for svc in self.services:
             self.bus.export(svc.path, svc)
             for ch in svc.chars:
                 self.bus.export(ch.path, ch)
 
-        # GATT application registration
-        node = await self.bus.introspect(BLUEZ, adapter_path)
-        obj = self.bus.get_proxy_object(BLUEZ, adapter_path, node)
-        gatt_mgr = obj.get_interface(GATT_MANAGER_IFACE)
-        await gatt_mgr.call_register_application("/app", {})
+        # Register application with GattManager1.
+        gatt_mgr = adapter_obj.get_interface(GATT_MANAGER_IFACE)
+        await gatt_mgr.call_register_application(self._app_root.path, {})
 
+        # Prepare and export LE advertisement.
+        service_uuids = [svc.uuid for svc in self.services]
+        self._adv = BleAdvertisement("/adv/protoble", self.local_name, service_uuids)
+        self.bus.export(self._adv.path, self._adv)
 
-        # Advertising (hey Bluetooth, im hier :=D )
-        class Adv(ServiceInterface):
-            def __init__(self, path, name, uuids):
-                super().__init__(ADVERTISING_IFACE)
-                self.path = path
-                self.name = name
-                self.uuids = uuids
+        adv_mgr = adapter_obj.get_interface(LE_ADV_MANAGER_IFACE)
+        await adv_mgr.call_register_advertisement(self._adv.path, {})
 
-            @dbus_property(access=PropertyAccess.READ)
-            def Type(self) -> "s":
-                return "peripheral"
-
-            @dbus_property(access=PropertyAccess.READ)
-            def ServiceUUIDs(self) -> "as":
-                return self.uuids
-
-            @dbus_property(access=PropertyAccess.READ)
-            def LocalName(self) -> "s":
-                return self.name
-
-        uuids = [svc.uuid for svc in self.services]
-        adv = Adv("/adv/protoble", self.local_name, uuids)
-        self.bus.export(adv.path, adv)
-
-        adv_mgr = obj.get_interface(LE_ADV_MANAGER_IFACE)
-        await adv_mgr.call_register_advertisement(adv.path, {})
-
-        return  # the caller will wait using its own event/signal handler
+        # Nothing more to do here. The caller is expected to keep the
+        # event loop running (e.g. by waiting on signals or tasks).
