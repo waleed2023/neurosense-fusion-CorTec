@@ -19,6 +19,7 @@ class BLEManager:
         self._client: Optional[BleakClient] = None
         self._battery: int = 255
         self._stop = asyncio.Event()
+        self._resolved_mac: Optional[str] = TARGET_MAC or None
 
     async def stop(self):
         self._stop.set()

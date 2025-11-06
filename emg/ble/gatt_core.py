@@ -393,8 +393,8 @@ class BleGattApp:
         await gatt_mgr.call_register_application(self._app_root.path, {})
 
         # Prepare and export LE advertisement.
-        # WICHTIG: Advertising-Paket klein halten (max. 31 Bytes),
-        # deshalb bewerben wir nur die erste Service-UUID.
+        # IMPORTANT: Keep advertising packet small (max. 31 bytes),
+        # therefore we only advertise the first service UUID.
         service_uuids = []
         if self.services:
             service_uuids = [self.services[0].uuid]
@@ -413,7 +413,3 @@ class BleGattApp:
                 f"type={e.type}, text={e.text}"
             )
             raise
-
-        # NIX MEHR DANACH – kein zweiter Aufruf!
-        # Event Loop am Leben halten macht der Aufrufer.
-
