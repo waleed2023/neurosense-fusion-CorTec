@@ -393,11 +393,16 @@ class BleGattApp:
         await gatt_mgr.call_register_application(self._app_root.path, {})
 
         # Prepare and export LE advertisement.
-        # Prepare and export LE advertisement.
-        service_uuids = [svc.uuid for svc in self.services]
+        # WICHTIG: Advertising-Paket klein halten (max. 31 Bytes),
+        # deshalb bewerben wir nur die erste Service-UUID.
+        service_uuids = []
+        if self.services:
+            service_uuids = [self.services[0].uuid]
+
         adv_path = "/org/bluez/protoble/advertisement0"
         self._adv = BleAdvertisement(adv_path, self.local_name, service_uuids)
         self.bus.export(self._adv.path, self._adv)
+
 
         adv_mgr = adapter_obj.get_interface(LE_ADV_MANAGER_IFACE)
         try:
