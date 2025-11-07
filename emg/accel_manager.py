@@ -106,7 +106,7 @@ class AccelManager:
                 while not self._stop.is_set():
                     # Poll
                     AX, AY, AZ, MAG = self._read_accel_g(bus, I2C_ADDR)
-                    sample = emg_pb2.AccelSample(ax=AX, ay=AY, az=AZ, mag=MAG, ts_ms=int(time.time()*1000))
+                    sample = emg_pb2.AccelSample(ax=AX, ay=AY, az=AZ, mag=MAG, ts_ms=int(time.time()*1000))  # send AccelSample to Broadcaster
                     await self.broadcaster.publish(sample)
 
                     # Sleep to achieve approx. ODR_HZ

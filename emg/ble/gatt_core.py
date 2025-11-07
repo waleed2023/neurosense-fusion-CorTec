@@ -195,7 +195,7 @@ class WriteChar(ServiceInterface):
 class BleAdvertisement(ServiceInterface):
     """
     Minimal LE Advertisement object implementing org.bluez.LEAdvertisement1.
-    BlueZ mag es oft lieber, wenn man nur das Nötigste setzt.
+    BlueZ often prefers when you only set the bare minimum.
     """
 
     def __init__(self, path: str, local_name: str, service_uuids: List[str]):

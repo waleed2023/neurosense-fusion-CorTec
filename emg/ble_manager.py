@@ -7,8 +7,10 @@ from bleak import BleakClient, BleakScanner
 from .config import ANALOG_CHAR, BATTERY_CHAR, TARGET_MAC, TARGET_NAME, VALUE_MAX, LOG_PREFIX
 from .proto import emg_pb2
 
+
 def now_ms() -> int:
     return int(time.time() * 1000)
+
 
 class BLEManager:
     """
@@ -19,6 +21,7 @@ class BLEManager:
         self._client: Optional[BleakClient] = None
         self._battery: int = 255
         self._stop = asyncio.Event()
+        # cache for resolved MAC; once we know it, we don't scan again
         self._resolved_mac: Optional[str] = TARGET_MAC or None
 
     async def stop(self):
@@ -29,15 +32,38 @@ class BLEManager:
         except Exception:
             pass
 
-    async def _resolve_mac(self, timeout: float = 6.0) -> Optional[str]:
+    async def _resolve_mac(self, timeout: float = 3.0) -> Optional[str]:
+        """
+        Resolve target MAC once.
+        - if TARGET_MAC is configured or already cached, use it directly (no scan)
+        - otherwise scan once by name and cache the result
+        """
+        # already cached → no scan
+        if self._resolved_mac:
+            return self._resolved_mac
+
+        # env/config given → just use it and remember
         if TARGET_MAC:
-            return TARGET_MAC
+            self._resolved_mac = TARGET_MAC
+            sys.stderr.write(f"{LOG_PREFIX} using configured MAC {self._resolved_mac}\n")
+            return self._resolved_mac
+
+        # no MAC known yet → one short scan by name
+        sys.stderr.write(f"{LOG_PREFIX} scanning for '{TARGET_NAME}' ...\n")
         devs = await BleakScanner.discover(timeout=timeout)
+        target_lower = TARGET_NAME.lower()
+
         for d in devs:
             name = (d.name or "").lower()
-            if TARGET_NAME.lower() in name:
-                return d.address
-        return None
+            if target_lower in name:
+                self._resolved_mac = d.address
+                sys.stderr.write(f"{LOG_PREFIX} found {TARGET_NAME} at {self._resolved_mac}\n")
+                break
+
+        if not self._resolved_mac:
+            sys.stderr.write(f"{LOG_PREFIX} target '{TARGET_NAME}' not found\n")
+
+        return self._resolved_mac
 
     def _on_emg(self, _handle: int, data: bytearray):
         try:
@@ -46,7 +72,11 @@ class BLEManager:
             v = struct.unpack_from("<H", data, 0)[0]
             if v > VALUE_MAX:
                 v = VALUE_MAX
-            sample = emg_pb2.EmgSample(value=v, ts_ms=now_ms(), battery=self._battery)
+            sample = emg_pb2.EmgSample(
+                value=v,
+                ts_ms=now_ms(),
+                battery=self._battery,
+            )
             asyncio.get_event_loop().create_task(self.broadcaster.publish(sample))
         except Exception as e:
             sys.stderr.write(f"{LOG_PREFIX} on_emg error: {e}\n")
@@ -57,13 +87,15 @@ class BLEManager:
             try:
                 mac = await self._resolve_mac()
                 if not mac:
-                    await asyncio.sleep(backoff); backoff = min(backoff * 2, 10)
+                    await asyncio.sleep(backoff)
+                    backoff = min(backoff * 2, 10)
                     continue
 
-                sys.stderr.write(f"{LOG_PREFIX} connected to {mac} ...\n")
+                sys.stderr.write(f"{LOG_PREFIX} connecting to {mac} ...\n")
                 async with BleakClient(mac, timeout=15.0) as c:
                     self._client = c
                     self._battery = 255
+
                     try:
                         b = await c.read_gatt_char(BATTERY_CHAR)
                         if b and len(b) >= 1:
@@ -88,6 +120,7 @@ class BLEManager:
                 break
             except Exception as e:
                 sys.stderr.write(f"{LOG_PREFIX} BLE: {e}\n")
-                await asyncio.sleep(backoff); backoff = min(backoff * 2, 10)
+                await asyncio.sleep(backoff)
+                backoff = min(backoff * 2, 10)
             finally:
                 self._client = None
