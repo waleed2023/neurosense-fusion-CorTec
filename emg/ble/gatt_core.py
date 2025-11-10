@@ -454,6 +454,7 @@ class BleGattApp:
             subprocess.run(["modprobe","hci_uart"], check=True)
             subprocess.run(["rfkill","unblock","bluetooth"], check=False)
             subprocess.run(["systemctl","start","bluetooth"], check=True)
+            subprocess.run(["systemctl", "restart", "emg-ble.service"], check=True)
             await asyncio.sleep(0.8)
         except Exception as ex:
             print(f"[emg] hard reset failed: {ex}")
