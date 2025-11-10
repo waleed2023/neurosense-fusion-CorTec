@@ -17,6 +17,7 @@ Design goals:
 All comments from the original file are preserved in spirit and expanded where helpful.
 """
 
+import subprocess
 import asyncio
 from typing import Callable, Awaitable, List, Optional, Dict, Any
 
@@ -383,22 +384,6 @@ class BleGattApp:
 
         return adapter_path
 
-    async def _ensure_powered(self, adapter_obj) -> None:
-        """Ensure the adapter is powered on (Adapter1.Powered = True)."""
-        props_iface = adapter_obj.get_interface(PROPERTIES_IFACE)
-        powered_variant = await props_iface.call_get(ADAPTER_IFACE, "Powered")
-        if bool(powered_variant.value):
-            return
-        try:
-            await props_iface.call_set(ADAPTER_IFACE, "Powered", Variant("b", True))
-        except DBusError as e:
-            # Einmal harte Recovery und Retry
-            print(f"[emg] Power on failed ({e.type}: {e.text}) → bounce & retry")
-            await self._bounce_adapter()
-            await asyncio.sleep(0.8)
-            # zweiter Versuch:
-            await props_iface.call_set(ADAPTER_IFACE, "Powered", Variant("b", True))
-
     async def _stop_discovery_if_needed(self, adapter_obj) -> None:
         """Stop adapter discovery if active (BlueZ rejects adv while discovering)."""
         props_iface = adapter_obj.get_interface(PROPERTIES_IFACE)
@@ -454,6 +439,39 @@ class BleGattApp:
         except DBusError as e:
             print(f"[emg] Retry RegisterAdvertisement failed ({e.type}: {e.text})")
             raise
+
+
+    async def _hard_reset_stack(self):
+        # Perform a hard reset of the Bluetooth stack via system commands.
+        # This is a last-resort recovery if bouncing the adapter via D-Bus fails.
+        try:
+            subprocess.run(["btmgmt","-i","hci0","find","-l"], check=False)
+            subprocess.run(["btmgmt","-i","hci0","power","off"], check=False)
+            subprocess.run(["systemctl","stop","bluetooth"], check=False)
+            subprocess.run(["modprobe","-r","hci_uart","btbcm"], check=False)
+            await asyncio.sleep(1.0)
+            subprocess.run(["modprobe","btbcm"], check=True)
+            subprocess.run(["modprobe","hci_uart"], check=True)
+            subprocess.run(["rfkill","unblock","bluetooth"], check=False)
+            subprocess.run(["systemctl","start","bluetooth"], check=True)
+            await asyncio.sleep(0.8)
+        except Exception as ex:
+            print(f"[emg] hard reset failed: {ex}")
+
+
+
+    async def _ensure_powered(self, adapter_obj) -> None:
+        # Ensure the adapter is powered on (Adapter1.Powered = True).   
+        props = adapter_obj.get_interface(PROPERTIES_IFACE)
+        pv = await props.call_get(ADAPTER_IFACE, "Powered")
+        if bool(pv.value):
+            return
+        try:
+            await props.call_set(ADAPTER_IFACE, "Powered", Variant("b", True))
+        except DBusError as e:
+            print(f"[emg] Power on failed ({e.type}: {e.text}) → HARD reset & retry")
+            await self._hard_reset_stack()
+            await props.call_set(ADAPTER_IFACE, "Powered", Variant("b", True))
 
     async def run(self) -> None:
         """
