@@ -18,6 +18,7 @@ All comments from the original file are preserved in spirit and expanded where h
 """
 
 import subprocess
+import sys
 import asyncio
 from typing import Callable, Awaitable, List, Optional, Dict, Any
 
@@ -471,6 +472,7 @@ class BleGattApp:
         except DBusError as e:
             print(f"[emg] Power on failed ({e.type}: {e.text}) → HARD reset & retry")
             await self._hard_reset_stack()
+            sys.exit(1)
             await props.call_set(ADAPTER_IFACE, "Powered", Variant("b", True))
 
     async def run(self) -> None:
