@@ -156,7 +156,7 @@ class BLEManager:
                 break
             except Exception as e:
                 sys.stderr.write(f"{LOG_PREFIX} BLE: {e}\n")
-                await asyncio.sleep(backoff, + random().uniform(0, 0.5))
+                await asyncio.sleep(backoff + random().uniform(0, 0.5))
                 backoff = min(backoff * 2, 10)
                 fails += 1
                 if faileds >= 5:
