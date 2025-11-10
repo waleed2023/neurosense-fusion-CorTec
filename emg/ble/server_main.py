@@ -60,6 +60,7 @@ async def main_async():
     print(f"{LOG_PREFIX} Stop-Signal, cleaning up...")
     await ble_mgr.stop()
     await acc_mgr.stop()
+    await app.stop()
     ble_task.cancel()
     acc_task.cancel()
     try:

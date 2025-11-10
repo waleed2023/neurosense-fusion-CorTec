@@ -104,6 +104,7 @@ class BLEManager:
             sys.stderr.write(f"{LOG_PREFIX} adapter bounce failed: {e}\n")
 
 
+    
     async def run(self):
         backoff = 1.0
         fails = 0
@@ -119,7 +120,7 @@ class BLEManager:
                         fails = 0
                     continue
 
-                sys.stderr.write(f"{LOG_PREFIX} connecting to {mac} ...\n")
+                sys.stdout.write(f"{LOG_PREFIX} connecting to {mac} ...\n")
                 async with BleakClient(mac, timeout=15.0) as c:
                     self._client = c
                     self._battery = 255
@@ -128,12 +129,12 @@ class BLEManager:
                         b = await c.read_gatt_char(BATTERY_CHAR)
                         if b and len(b) >= 1:
                             self._battery = int(b[0])
-                        sys.stderr.write(f"{LOG_PREFIX} Battery {self._battery}%\n")
+                        sys.stdout.write(f"{LOG_PREFIX} Battery {self._battery}%\n")
                     except Exception:
                         pass
 
                     await c.start_notify(ANALOG_CHAR, self._on_emg)
-                    sys.stderr.write(f"{LOG_PREFIX} EMG Notify active\n")
+                    sys.stdout.write(f"{LOG_PREFIX} EMG Notify active\n")
                     backoff = 1.0
                     fails = 0
                     self._last_emg_ms = now_ms()
@@ -142,7 +143,7 @@ class BLEManager:
                         
                         if self._idle_timeout_ms > 0 and self._last_emg_ms:
                             if (now_ms() - self._last_emg_ms) > self._idle_timeout_ms:
-                                sys.stderr.write(f"{LOG_PREFIX} no EMG for {self._idle_timeout_ms}ms → reconnect\n")
+                                sys.stdout.write(f"{LOG_PREFIX} no EMG for {self._idle_timeout_ms}ms → reconnect\n")
                                 await c.disconnect()   # breaks loop; outer while will retry
                                 break
                     try:
@@ -153,7 +154,7 @@ class BLEManager:
             except asyncio.CancelledError:
                 break
             except Exception as e:
-                sys.stderr.write(f"{LOG_PREFIX} BLE: {e}\n")
+                sys.stdout.write(f"{LOG_PREFIX} BLE: {e}\n")
                 await asyncio.sleep(backoff + random.uniform(0, 0.5))
                 backoff = min(backoff * 2, 10)
                 fails += 1
