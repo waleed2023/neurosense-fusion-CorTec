@@ -9,9 +9,7 @@ from .proto import emg_pb2
 from dbus_next.aio import MessageBus
 from dbus_next import Variant, BusType
 import os
-from random import random
-
-
+import random
 
 def now_ms() -> int:
     return int(time.time() * 1000)
@@ -113,7 +111,7 @@ class BLEManager:
             try:
                 mac = await self._resolve_mac()
                 if not mac:
-                    await asyncio.sleep(backoff + random().uniform(0, 0.5))
+                    await asyncio.sleep(backoff + random.uniform(0, 0.5))
                     backoff = min(backoff * 2, 10)
                     fails += 1
                     if fails >= 5:
@@ -156,7 +154,7 @@ class BLEManager:
                 break
             except Exception as e:
                 sys.stderr.write(f"{LOG_PREFIX} BLE: {e}\n")
-                await asyncio.sleep(backoff + random().uniform(0, 0.5))
+                await asyncio.sleep(backoff + random.uniform(0, 0.5))
                 backoff = min(backoff * 2, 10)
                 fails += 1
                 if faileds >= 5:
