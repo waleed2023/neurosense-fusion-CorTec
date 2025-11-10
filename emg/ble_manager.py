@@ -157,7 +157,7 @@ class BLEManager:
                 await asyncio.sleep(backoff + random.uniform(0, 0.5))
                 backoff = min(backoff * 2, 10)
                 fails += 1
-                if faileds >= 5:
+                if fails >= 5:
                     await self._bounce_adapter()
                     fails = 0
             finally:
