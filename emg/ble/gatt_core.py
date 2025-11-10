@@ -387,7 +387,16 @@ class BleGattApp:
         """Ensure the adapter is powered on (Adapter1.Powered = True)."""
         props_iface = adapter_obj.get_interface(PROPERTIES_IFACE)
         powered_variant = await props_iface.call_get(ADAPTER_IFACE, "Powered")
-        if not bool(powered_variant.value):
+        if bool(powered_variant.value):
+            return
+        try:
+            await props_iface.call_set(ADAPTER_IFACE, "Powered", Variant("b", True))
+        except DBusError as e:
+            # Einmal harte Recovery und Retry
+            print(f"[emg] Power on failed ({e.type}: {e.text}) → bounce & retry")
+            await self._bounce_adapter()
+            await asyncio.sleep(0.8)
+            # zweiter Versuch:
             await props_iface.call_set(ADAPTER_IFACE, "Powered", Variant("b", True))
 
     async def _stop_discovery_if_needed(self, adapter_obj) -> None:
