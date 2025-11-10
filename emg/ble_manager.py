@@ -6,6 +6,9 @@ from typing import Optional
 from bleak import BleakClient, BleakScanner
 from .config import ANALOG_CHAR, BATTERY_CHAR, TARGET_MAC, TARGET_NAME, VALUE_MAX, LOG_PREFIX
 from .proto import emg_pb2
+from dbus_next.aio import MessageBus
+from dbus_next import Variant, BusType
+
 
 
 def now_ms() -> int:
@@ -23,6 +26,9 @@ class BLEManager:
         self._stop = asyncio.Event()
         # cache for resolved MAC; once we know it, we don't scan again
         self._resolved_mac: Optional[str] = TARGET_MAC or None
+        # cache for last EMG timestamp
+        self._last_emg_ms = 0
+        self._idle_timeout_ms = int(os.getenv("EMG_IDLE_TIMEOUT_MS", "5000"))  # default 5s
 
     async def stop(self):
         self._stop.set()
@@ -72,6 +78,7 @@ class BLEManager:
             v = struct.unpack_from("<H", data, 0)[0]
             if v > VALUE_MAX:
                 v = VALUE_MAX
+            self._last_emg_ms = now_ms()
             sample = emg_pb2.EmgSample(
                 value=v,
                 ts_ms=now_ms(),
@@ -107,10 +114,14 @@ class BLEManager:
                     await c.start_notify(ANALOG_CHAR, self._on_emg)
                     sys.stderr.write(f"{LOG_PREFIX} EMG Notify active\n")
                     backoff = 1.0
-
+                    self._last_emg_ms = now_ms()
                     while c.is_connected and not self._stop.is_set():
                         await asyncio.sleep(0.5)
-
+                        if self._idle_timeout_ms > 0 and self._last_emg_ms:
+                            if (now_ms() - self._last_emg_ms) > self._idle_timeout_ms:
+                                sys.stderr.write(f"{LOG_PREFIX} no EMG for {self._idle_timeout_ms}ms → reconnect\n")
+                                await c.disconnect()   # breaks loop; outer while will retry
+                                break
                     try:
                         await c.stop_notify(ANALOG_CHAR)
                     except Exception:
