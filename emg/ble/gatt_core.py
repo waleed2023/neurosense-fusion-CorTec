@@ -1,12 +1,32 @@
 #!/usr/bin/env python3
+"""
+Core GATT helper for BlueZ via dbus-next.
+
+This module wires together:
+  - D-Bus system bus connection
+  - Bluetooth adapter discovery and preparation
+  - GATT application (services + characteristics)
+  - LE advertising with auto‑recovery (stop discovery, power‑cycle adapter, retry)
+
+Design goals:
+  * Keep the GATT objects minimal and compliant with BlueZ expectations.
+  * Keep the advertising packet small (name + first service UUID only).
+  * Register the advertisement once and keep it for the lifetime of the process.
+  * Provide a clean stop() for systemd shutdowns to avoid stale state.
+
+All comments from the original file are preserved in spirit and expanded where helpful.
+"""
+
 import asyncio
 from typing import Callable, Awaitable, List, Optional, Dict, Any
+
 from dbus_next.errors import DBusError
 from dbus_next.aio import MessageBus
 from dbus_next import Variant, BusType
 from dbus_next.service import ServiceInterface, method, dbus_property
 from dbus_next.constants import PropertyAccess
 
+# ---- BlueZ / D-Bus constants ----
 BLUEZ                   = "org.bluez"
 ADAPTER_IFACE           = "org.bluez.Adapter1"
 GATT_MANAGER_IFACE      = "org.bluez.GattManager1"
@@ -17,6 +37,7 @@ PROPERTIES_IFACE        = "org.freedesktop.DBus.Properties"
 OBJ_MANAGER_IFACE       = "org.freedesktop.DBus.ObjectManager"
 ADVERTISING_IFACE       = "org.bluez.LEAdvertisement1"
 
+# ---- Small helpers ----
 
 class RpcStream:
     """
@@ -42,6 +63,8 @@ class RpcStream:
             self._task.cancel()
         self._task = None
 
+
+# ---- GATT primitives ----
 
 class GattService(ServiceInterface):
     """
@@ -138,7 +161,6 @@ class NotifyChar(ServiceInterface):
             self.emit_properties_changed({"Value": self._value}, [])
 
 
-
 class WriteChar(ServiceInterface):
     """
     Characteristic that supports 'write' / 'write-without-response'.
@@ -230,7 +252,6 @@ class BleAdvertisement(ServiceInterface):
         print("[emg] Advertisement released")
 
 
-
 class GattApplication(ServiceInterface):
     """
     Simple application root implementing org.freedesktop.DBus.ObjectManager.
@@ -292,13 +313,15 @@ class GattApplication(ServiceInterface):
         return managed
 
 
+# ---- High level app that owns bus, adapter, services, advertisement ----
+
 class BleGattApp:
     """
     High-level helper that wires together:
       - D-Bus system bus connection
       - Bluetooth adapter discovery
       - GATT application (services + characteristics)
-      - LE advertising
+      - LE advertising (with auto‑recovery)
 
     Usage:
         app = BleGattApp(local_name="NeuroSense", services=[emg_svc, acc_svc])
@@ -312,6 +335,9 @@ class BleGattApp:
         self._adapter_path: Optional[str] = None
         self._adv: Optional[BleAdvertisement] = None
         self._app_root: Optional[GattApplication] = None
+        # Internal guards/state
+        self._registered_adv: bool = False
+        self._registering_lock = asyncio.Lock()
 
     async def _find_adapter_path(self) -> str:
         """
@@ -357,69 +383,152 @@ class BleGattApp:
 
         return adapter_path
 
-    async def run(self) -> None:
-        """
-        Connect to the system bus, export services and advertisement,
-        register the GATT application and start advertising.
-        """
-        # Connect to the system bus where BlueZ lives.
-        self.bus = await MessageBus(bus_type=BusType.SYSTEM).connect()
-
-        # Find an adapter.
-        self._adapter_path = await self._find_adapter_path()
-
-        # Ensure the adapter is powered on.
-        node = await self.bus.introspect(BLUEZ, self._adapter_path)
-        adapter_obj = self.bus.get_proxy_object(BLUEZ, self._adapter_path, node)
+    async def _ensure_powered(self, adapter_obj) -> None:
+        """Ensure the adapter is powered on (Adapter1.Powered = True)."""
         props_iface = adapter_obj.get_interface(PROPERTIES_IFACE)
-
         powered_variant = await props_iface.call_get(ADAPTER_IFACE, "Powered")
-        powered = bool(powered_variant.value)
-        if not powered:
+        if not bool(powered_variant.value):
             await props_iface.call_set(ADAPTER_IFACE, "Powered", Variant("b", True))
 
-        # Export the application root (ObjectManager).
-        self._app_root = GattApplication("/app", self.services)
-        self.bus.export(self._app_root.path, self._app_root)
-
-        # Export all services and characteristics.
-        for svc in self.services:
-            self.bus.export(svc.path, svc)
-            for ch in svc.chars:
-                self.bus.export(ch.path, ch)
-
-        # Register application with GattManager1.
-        gatt_mgr = adapter_obj.get_interface(GATT_MANAGER_IFACE)
-        await gatt_mgr.call_register_application(self._app_root.path, {})
-
-        # Prepare and export LE advertisement.
-        # IMPORTANT: Keep advertising packet small (max. 31 bytes),
-        # therefore we only advertise the first service UUID.
-        service_uuids = []
-        if self.services:
-            service_uuids = [self.services[0].uuid]
-
-        adv_path = "/org/bluez/protoble/advertisement0"
-        self._adv = BleAdvertisement(adv_path, self.local_name, service_uuids)
-        self.bus.export(self._adv.path, self._adv)
-
-
-        adv_mgr = adapter_obj.get_interface(LE_ADV_MANAGER_IFACE)
-        # If adapter is currently discovering, stop it before registering the adv
+    async def _stop_discovery_if_needed(self, adapter_obj) -> None:
+        """Stop adapter discovery if active (BlueZ rejects adv while discovering)."""
+        props_iface = adapter_obj.get_interface(PROPERTIES_IFACE)
         adapter_iface = adapter_obj.get_interface(ADAPTER_IFACE)
         discovering = bool((await props_iface.call_get(ADAPTER_IFACE, "Discovering")).value)
         if discovering:
             try:
                 await adapter_iface.call_stop_discovery()
-            except DBusError:
+            except Exception:
+                # Ignore; we'll still attempt registration
                 pass
 
+    async def _bounce_adapter(self) -> None:
+        """Toggle Adapter1.Powered off→on to clear funky controller state."""
+        assert self.bus is not None and self._adapter_path is not None
+        node = await self.bus.introspect(BLUEZ, self._adapter_path)
+        obj = self.bus.get_proxy_object(BLUEZ, self._adapter_path, node)
+        props = obj.get_interface(PROPERTIES_IFACE)
+        try:
+            await props.call_set(ADAPTER_IFACE, "Powered", Variant("b", False))
+            await asyncio.sleep(0.6)
+            await props.call_set(ADAPTER_IFACE, "Powered", Variant("b", True))
+            print("[emg] Adapter power-cycled")
+        except Exception as e:
+            print(f"[emg] Adapter bounce failed: {e}")
+
+    async def _register_advertisement_with_recovery(self, adapter_obj) -> None:
+        """
+        Register advertisement; on failure, recover and retry once.
+        This specifically targets BlueZ errors like Authentication Failed (0x05),
+        Failed (0x03), and InProgress while discovery is active.
+        """
         adv_mgr = adapter_obj.get_interface(LE_ADV_MANAGER_IFACE)
+
+        # First try: stop discovery then register
+        await self._stop_discovery_if_needed(adapter_obj)
         try:
             await adv_mgr.call_register_advertisement(self._adv.path, {})
+            self._registered_adv = True
+            return
         except DBusError as e:
-            print(
-                "[emg] Failed to register advertisement: "
-                f"type={e.type}, text={e.text}"
-            )
+            print(f"[emg] RegisterAdvertisement failed ({e.type}: {e.text}) → recover and retry")
+
+        # Recovery: bounce adapter, wait, stop discovery again, retry once
+        await self._bounce_adapter()
+        await asyncio.sleep(0.8)  # small settle time after power-cycle
+        await self._stop_discovery_if_needed(adapter_obj)
+
+        try:
+            await adv_mgr.call_register_advertisement(self._adv.path, {})
+            self._registered_adv = True
+            print("[emg] Advertisement registered after recovery")
+        except DBusError as e:
+            print(f"[emg] Retry RegisterAdvertisement failed ({e.type}: {e.text})")
             raise
+
+    async def run(self) -> None:
+        """
+        Connect to the system bus, export services and advertisement,
+        register the GATT application and start advertising (with auto‑recovery).
+        """
+        # Guard: only perform registration once per process
+        async with self._registering_lock:
+            if self._registered_adv:
+                return
+
+            # Connect to the system bus where BlueZ lives.
+            self.bus = await MessageBus(bus_type=BusType.SYSTEM).connect()
+
+            # Find an adapter.
+            self._adapter_path = await self._find_adapter_path()
+
+            # Proxy objects for the adapter
+            node = await self.bus.introspect(BLUEZ, self._adapter_path)
+            adapter_obj = self.bus.get_proxy_object(BLUEZ, self._adapter_path, node)
+
+            # Ensure powered on
+            await self._ensure_powered(adapter_obj)
+
+            # Export the application root (ObjectManager).
+            self._app_root = GattApplication("/app", self.services)
+            self.bus.export(self._app_root.path, self._app_root)
+
+            # Export all services and characteristics.
+            for svc in self.services:
+                self.bus.export(svc.path, svc)
+                for ch in svc.chars:
+                    self.bus.export(ch.path, ch)
+
+            # Register application with GattManager1.
+            gatt_mgr = adapter_obj.get_interface(GATT_MANAGER_IFACE)
+            await gatt_mgr.call_register_application(self._app_root.path, {})
+
+            # Prepare and export LE advertisement.
+            # IMPORTANT: Keep advertising packet small (max. 31 bytes),
+            # therefore we only advertise the first service UUID.
+            service_uuids = [self.services[0].uuid] if self.services else []
+            adv_path = "/org/bluez/protoble/advertisement0"
+            self._adv = BleAdvertisement(adv_path, self.local_name, service_uuids)
+            self.bus.export(self._adv.path, self._adv)
+
+            # Robust registration with auto-recovery
+            await self._register_advertisement_with_recovery(adapter_obj)
+
+            print(f"[emg] Advertising as '{self.local_name}' (services={service_uuids})")
+
+    async def stop(self) -> None:
+        """Unregister advertisement and unexport objects cleanly (optional but recommended)."""
+        if not self.bus or not self._adapter_path:
+            return
+        try:
+            node = await self.bus.introspect(BLUEZ, self._adapter_path)
+            adapter_obj = self.bus.get_proxy_object(BLUEZ, self._adapter_path, node)
+            adv_mgr = adapter_obj.get_interface(LE_ADV_MANAGER_IFACE)
+            if self._adv and self._registered_adv:
+                try:
+                    await adv_mgr.call_unregister_advertisement(self._adv.path)
+                except Exception:
+                    pass
+        finally:
+            # Unexport objects (safe if already gone)
+            if self._adv:
+                try:
+                    self.bus.unexport(self._adv.path)
+                except Exception:
+                    pass
+            if self._app_root:
+                try:
+                    self.bus.unexport(self._app_root.path)
+                except Exception:
+                    pass
+            for svc in (self.services or []):
+                try:
+                    self.bus.unexport(svc.path)
+                except Exception:
+                    pass
+                for ch in getattr(svc, "chars", []):
+                    try:
+                        self.bus.unexport(ch.path)
+                    except Exception:
+                        pass
+            self._registered_adv = False
