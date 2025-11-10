@@ -17,14 +17,8 @@ async def main_async():
     emg_b = Broadcaster()
     acc_b = Broadcaster()
 
-    # 2) Sensor-Manager (start reading sensors and publishing to Broadcaster)
-    ble_mgr = BLEManager(emg_b) # Connects to BLE EMG device and publishes EmgSample to emg_b
-    acc_mgr = AccelManager(acc_b) # Connects to Accel device and publishes AccelSample to acc_b
 
-    ble_task = asyncio.create_task(ble_mgr.run())
-    acc_task = asyncio.create_task(acc_mgr.run())
-
-    # 3) D-Bus GATT App (services need the bus)
+    # 2) D-Bus GATT App (services need the bus)
     # The GATT app requires fully-built service objects which in turn need a connected
     # DBus MessageBus. To keep things simple we connect the bus below (after this block)
     # and then call build_emg_service(bus, emg_b) and build_acc_service(bus, acc_b).
@@ -36,6 +30,15 @@ async def main_async():
     bus = await MessageBus(bus_type=BusType.SYSTEM).connect()
     emg_svc = build_emg_service(bus, emg_b)
     acc_svc = build_acc_service(bus, acc_b)
+
+
+
+    # 3) Sensor-Manager (start reading sensors and publishing to Broadcaster)
+    ble_mgr = BLEManager(emg_b) # Connects to BLE EMG device and publishes EmgSample to emg_b
+    acc_mgr = AccelManager(acc_b) # Connects to Accel device and publishes AccelSample to acc_b
+
+    ble_task = asyncio.create_task(ble_mgr.run())
+    acc_task = asyncio.create_task(acc_mgr.run())
 
     app = BleGattApp(local_name="NS-ProtoBLE", services=[emg_svc, acc_svc])
     await app.run()  # registers services & starts advertising

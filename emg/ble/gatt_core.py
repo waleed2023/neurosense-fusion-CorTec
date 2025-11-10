@@ -405,6 +405,16 @@ class BleGattApp:
 
 
         adv_mgr = adapter_obj.get_interface(LE_ADV_MANAGER_IFACE)
+        # If adapter is currently discovering, stop it before registering the adv
+        adapter_iface = adapter_obj.get_interface(ADAPTER_IFACE)
+        discovering = bool((await props_iface.call_get(ADAPTER_IFACE, "Discovering")).value)
+        if discovering:
+            try:
+                await adapter_iface.call_stop_discovery()
+            except DBusError:
+                pass
+
+        adv_mgr = adapter_obj.get_interface(LE_ADV_MANAGER_IFACE)
         try:
             await adv_mgr.call_register_advertisement(self._adv.path, {})
         except DBusError as e:
