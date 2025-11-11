@@ -406,7 +406,7 @@ class BleGattApp:
         # Perform a hard reset of the Bluetooth stack via system commands.
         # This is a last-resort recovery if bouncing the adapter via D-Bus fails.
         # First try: stop discovery then register
-        await self._stop_discovery_if_needed(adapter_obj)
+        #await self._stop_discovery_if_needed(adapter_obj)
         try:
             subprocess.run(["/usr/sbin/modprobe","-r","hci_uart","btbcm"], check=True)
             await asyncio.sleep(1.0)
