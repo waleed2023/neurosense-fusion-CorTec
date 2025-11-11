@@ -389,6 +389,8 @@ class BleGattApp:
         powered_variant = await props_iface.call_get(ADAPTER_IFACE, "Powered")
         if not bool(powered_variant.value):
             await props_iface.call_set(ADAPTER_IFACE, "Powered", Variant("b", True))
+            await self._hard_reset_stack()
+
 
     async def _stop_discovery_if_needed(self, adapter_obj) -> None:
         """Stop adapter discovery if active (BlueZ rejects adv while discovering)."""
