@@ -385,61 +385,6 @@ class BleGattApp:
 
         return adapter_path
 
-    async def _stop_discovery_if_needed(self, adapter_obj) -> None:
-        """Stop adapter discovery if active (BlueZ rejects adv while discovering)."""
-        props_iface = adapter_obj.get_interface(PROPERTIES_IFACE)
-        adapter_iface = adapter_obj.get_interface(ADAPTER_IFACE)
-        discovering = bool((await props_iface.call_get(ADAPTER_IFACE, "Discovering")).value)
-        if discovering:
-            try:
-                await adapter_iface.call_stop_discovery()
-            except Exception:
-                # Ignore; we'll still attempt registration
-                pass
-
-    async def _bounce_adapter(self) -> None:
-        """Toggle Adapter1.Powered off→on to clear funky controller state."""
-        assert self.bus is not None and self._adapter_path is not None
-        node = await self.bus.introspect(BLUEZ, self._adapter_path)
-        obj = self.bus.get_proxy_object(BLUEZ, self._adapter_path, node)
-        props = obj.get_interface(PROPERTIES_IFACE)
-        try:
-            await props.call_set(ADAPTER_IFACE, "Powered", Variant("b", False))
-            await asyncio.sleep(0.6)
-            await props.call_set(ADAPTER_IFACE, "Powered", Variant("b", True))
-            print("[emg] Adapter power-cycled")
-        except Exception as e:
-            print(f"[emg] Adapter bounce failed: {e}")
-
-    async def _register_advertisement_with_recovery(self, adapter_obj) -> None:
-        """
-        Register advertisement; on failure, recover and retry once.
-        This specifically targets BlueZ errors like Authentication Failed (0x05),
-        Failed (0x03), and InProgress while discovery is active.
-        """
-        adv_mgr = adapter_obj.get_interface(LE_ADV_MANAGER_IFACE)
-
-        # First try: stop discovery then register
-        await self._stop_discovery_if_needed(adapter_obj)
-        try:
-            await adv_mgr.call_register_advertisement(self._adv.path, {})
-            self._registered_adv = True
-            return
-        except DBusError as e:
-            print(f"[emg] RegisterAdvertisement failed ({e.type}: {e.text}) → recover and retry")
-
-        # Recovery: bounce adapter, wait, stop discovery again, retry once
-        await self._bounce_adapter()
-        await asyncio.sleep(0.8)  # small settle time after power-cycle
-        await self._stop_discovery_if_needed(adapter_obj)
-
-        try:
-            await adv_mgr.call_register_advertisement(self._adv.path, {})
-            self._registered_adv = True
-            print("[emg] Advertisement registered after recovery")
-        except DBusError as e:
-            print(f"[emg] Retry RegisterAdvertisement failed ({e.type}: {e.text})")
-            raise
 
 
     async def _hard_reset_stack(self):
@@ -472,7 +417,7 @@ class BleGattApp:
         except DBusError as e:
             print(f"[emg] Power on failed ({e.type}: {e.text}) → HARD reset & retry")
             await self._hard_reset_stack()
-            sys.exit(1)
+            #sys.exit(1)
             await props.call_set(ADAPTER_IFACE, "Powered", Variant("b", True))
 
     async def run(self) -> None:
@@ -519,10 +464,6 @@ class BleGattApp:
             adv_path = "/org/bluez/protoble/advertisement0"
             self._adv = BleAdvertisement(adv_path, self.local_name, service_uuids)
             self.bus.export(self._adv.path, self._adv)
-
-            # Robust registration with auto-recovery
-            await self._register_advertisement_with_recovery(adapter_obj)
-
             print(f"[emg] Advertising as '{self.local_name}' (services={service_uuids})")
 
     async def stop(self) -> None:
