@@ -1,6 +1,8 @@
 #!/usr/bin/env python3
 import asyncio
 import signal
+import os
+import socket
 from emg.broadcaster import Broadcaster
 from emg.ble_manager import BLEManager
 from emg.accel_manager import AccelManager
@@ -44,6 +46,8 @@ async def main_async():
 
     print(f"{LOG_PREFIX} BLE ProtoBLE-Server running as 'NS-ProtoBLE'")
 
+    sd_notify("WATCHDOG=1")
+
     # 4) wait for stop signal
     stop = asyncio.Event()
 
@@ -66,6 +70,17 @@ async def main_async():
         await asyncio.gather(ble_task, acc_task)
     except asyncio.CancelledError:
         pass
+
+def sd_notify(msg: str) -> None:
+    addr = os.getenv("NOTIFY_SOCKET")
+    if not addr:
+        return
+    if addr[0] == "@":
+        addr = "\0" + addr[1:]
+    s = socket.socket(socket.AF_UNIX, socket.SOCK_DGRAM)
+    s.connect(addr)
+    s.send(msg.encode())
+    s.close()
 
 def main():
     asyncio.run(main_async())
