@@ -2,6 +2,7 @@
 import asyncio
 import signal
 import time
+from emg.proto import emg_pb2
 from emg.broadcaster import Broadcaster
 from emg.ble_manager import BLEManager
 from emg.accel_manager import AccelManager
