@@ -17,6 +17,7 @@ Design goals:
 All comments from the original file are preserved in spirit and expanded where helpful.
 """
 
+import subprocess
 import asyncio
 from typing import Callable, Awaitable, List, Optional, Dict, Any
 
