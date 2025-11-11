@@ -1,8 +1,6 @@
 #!/usr/bin/env python3
 import asyncio
 import signal
-import time
-from emg.proto import emg_pb2
 from emg.broadcaster import Broadcaster
 from emg.ble_manager import BLEManager
 from emg.accel_manager import AccelManager
@@ -34,10 +32,6 @@ async def main_async():
     acc_svc = build_acc_service(bus, acc_b)
 
     
-    # find the Notify Characteristic for heartbeat checks
-    emg_ret = next(ch for ch in emg_svc.chars if getattr(ch, "uuid", "") == "f8c94a20-9f1f-4f5a-8ad1-3d1b7c0a1002")
-
-
     # 3) Sensor-Manager (start reading sensors and publishing to Broadcaster)
     ble_mgr = BLEManager(emg_b) # Connects to BLE EMG device and publishes EmgSample to emg_b
     acc_mgr = AccelManager(acc_b) # Connects to Accel device and publishes AccelSample to acc_b
@@ -49,31 +43,6 @@ async def main_async():
     await app.run()  # registers services & starts advertising
 
     print(f"{LOG_PREFIX} BLE ProtoBLE-Server running as 'NS-ProtoBLE'")
-
-
-    async def emg_notify_heartbeat():
-        idle_no_sub_since = 0
-        while True:
-            await asyncio.sleep(2.0)
-
-            if emg_ret.is_notifying():
-                idle_no_sub_since = 0
-                try:
-                    hb = emg_pb2.EmgSample()
-                    hb.value = 0              # neutraler Sample-Wert
-                    hb.ts_ms = int(time.time() * 1000)
-                    hb.battery = 255          # 255 = unbekannt (laut Kommentar im .proto)
-                    await emg_ret.notify(hb.SerializeToString())
-                except Exception as ex:
-                    # Hier ggf. harte Eskalation: Disconnect/RemoveDevice oder Exit→systemd
-                    print(f"[emg] heartbeat notify failed: {ex}")
-            else:
-                idle_no_sub_since += 2
-                if idle_no_sub_since >= 10:
-                    # Optional: hier kannst du die bestehende Verbindung hart droppen
-                    # (Device1.Disconnect + Adapter.RemoveDevice) und wieder werben.
-                    idle_no_sub_since = 0
-    asyncio.create_task(emg_notify_heartbeat())
 
     # 4) wait for stop signal
     stop = asyncio.Event()
@@ -88,7 +57,6 @@ async def main_async():
     await stop.wait()
 
     print(f"{LOG_PREFIX} Stop-Signal, cleaning up...")
-    hb_task.cancel()
     await ble_mgr.stop()
     await acc_mgr.stop()
     await app.stop()
@@ -98,10 +66,6 @@ async def main_async():
         await asyncio.gather(ble_task, acc_task)
     except asyncio.CancelledError:
         pass
-
-
-
-
 
 def main():
     asyncio.run(main_async())
