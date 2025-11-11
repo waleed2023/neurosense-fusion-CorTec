@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 import asyncio
 import signal
+import time
 from emg.broadcaster import Broadcaster
 from emg.ble_manager import BLEManager
 from emg.accel_manager import AccelManager
@@ -53,19 +54,23 @@ async def main_async():
         idle_no_sub_since = 0
         while True:
             await asyncio.sleep(2.0)
+
             if emg_ret.is_notifying():
                 idle_no_sub_since = 0
                 try:
-                    await emg_ret.notify(b"\x00")  # 1-Byte-Ping
-                except Exception:
-                    # optional: Eskalation/Exit → systemd
-                    pass
+                    hb = emg_pb2.EmgSample()
+                    hb.value = 0              # neutraler Sample-Wert
+                    hb.ts_ms = int(time.time() * 1000)
+                    hb.battery = 255          # 255 = unbekannt (laut Kommentar im .proto)
+                    await emg_ret.notify(hb.SerializeToString())
+                except Exception as ex:
+                    # Hier ggf. harte Eskalation: Disconnect/RemoveDevice oder Exit→systemd
+                    print(f"[emg] heartbeat notify failed: {ex}")
             else:
                 idle_no_sub_since += 2
-                # z.B. nach 10s ohne Abo → Verbindung droppen (falls du als Peripheral aktiv trennst)
                 if idle_no_sub_since >= 10:
-                    # hier: BlueZ-seitig Device trennen/entfernen, dann weiter werben
-                    # (siehe vorheriger Vorschlag: Device1.Disconnect + Adapter.RemoveDevice)
+                    # Optional: hier kannst du die bestehende Verbindung hart droppen
+                    # (Device1.Disconnect + Adapter.RemoveDevice) und wieder werben.
                     idle_no_sub_since = 0
     asyncio.create_task(emg_notify_heartbeat())
 
