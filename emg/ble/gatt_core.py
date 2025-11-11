@@ -136,6 +136,12 @@ class NotifyChar(ServiceInterface):
         Returns the last value that was notified.
         """
         return self._value
+    
+    def is_notifying(self) -> bool:
+        """
+        Check if notifications are currently enabled.
+        """
+        return self._notifying
 
     @method()
     def StartNotify(self) -> None:

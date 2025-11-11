@@ -31,6 +31,9 @@ async def main_async():
     emg_svc = build_emg_service(bus, emg_b)
     acc_svc = build_acc_service(bus, acc_b)
 
+    
+    # find the Notify Characteristic for heartbeat checks
+    emg_ret = next(ch for ch in emg_svc.chars if getattr(ch, "uuid", "") == "f8c94a20-9f1f-4f5a-8ad1-3d1b7c0a1002")
 
 
     # 3) Sensor-Manager (start reading sensors and publishing to Broadcaster)
@@ -45,6 +48,27 @@ async def main_async():
 
     print(f"{LOG_PREFIX} BLE ProtoBLE-Server running as 'NS-ProtoBLE'")
 
+
+    async def emg_notify_heartbeat():
+        idle_no_sub_since = 0
+        while True:
+            await asyncio.sleep(2.0)
+            if emg_ret.is_notifying():
+                idle_no_sub_since = 0
+                try:
+                    await emg_ret.notify(b"\x00")  # 1-Byte-Ping
+                except Exception:
+                    # optional: Eskalation/Exit → systemd
+                    pass
+            else:
+                idle_no_sub_since += 2
+                # z.B. nach 10s ohne Abo → Verbindung droppen (falls du als Peripheral aktiv trennst)
+                if idle_no_sub_since >= 10:
+                    # hier: BlueZ-seitig Device trennen/entfernen, dann weiter werben
+                    # (siehe vorheriger Vorschlag: Device1.Disconnect + Adapter.RemoveDevice)
+                    idle_no_sub_since = 0
+    asyncio.create_task(emg_notify_heartbeat())
+
     # 4) wait for stop signal
     stop = asyncio.Event()
 
@@ -58,6 +82,7 @@ async def main_async():
     await stop.wait()
 
     print(f"{LOG_PREFIX} Stop-Signal, cleaning up...")
+    hb_task.cancel()
     await ble_mgr.stop()
     await acc_mgr.stop()
     await app.stop()
@@ -67,6 +92,10 @@ async def main_async():
         await asyncio.gather(ble_task, acc_task)
     except asyncio.CancelledError:
         pass
+
+
+
+
 
 def main():
     asyncio.run(main_async())
