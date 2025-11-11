@@ -390,11 +390,23 @@ class BleGattApp:
         if not bool(powered_variant.value):
             await props_iface.call_set(ADAPTER_IFACE, "Powered", Variant("b", True))
 
+    async def _stop_discovery_if_needed(self, adapter_obj) -> None:
+        """Stop adapter discovery if active (BlueZ rejects adv while discovering)."""
+        props_iface = adapter_obj.get_interface(PROPERTIES_IFACE)
+        adapter_iface = adapter_obj.get_interface(ADAPTER_IFACE)
+        discovering = bool((await props_iface.call_get(ADAPTER_IFACE, "Discovering")).value)
+        if discovering:
+            try:
+                await adapter_iface.call_stop_discovery()
+            except Exception:
+                # Ignore; we'll still attempt registration
+                pass
 
     async def _hard_reset_stack(self):
         # Perform a hard reset of the Bluetooth stack via system commands.
         # This is a last-resort recovery if bouncing the adapter via D-Bus fails.
         # First try: stop discovery then register
+        await self._stop_discovery_if_needed(adapter_obj)
         try:
             subprocess.run(["modprobe", "-r", "hci_uart", "btbcm"], check=True)
             subprocess.run(["sleep", "1"], check=True)
