@@ -402,6 +402,26 @@ class BleGattApp:
                 # Ignore; we'll still attempt registration
                 pass
 
+    async def _hard_reset_stack(self):
+        # Perform a hard reset of the Bluetooth stack via system commands.
+        # This is a last-resort recovery if bouncing the adapter via D-Bus fails.
+        # First try: stop discovery then register
+        await self._stop_discovery_if_needed(adapter_obj)
+        try:
+            subprocess.run(["btmgmt","-i","hci0","find","-l"], check=False)
+            subprocess.run(["btmgmt","-i","hci0","power","off"], check=False)
+            subprocess.run(["systemctl","stop","bluetooth"], check=False)
+            subprocess.run(["modprobe","-r","hci_uart","btbcm"], check=False)
+            await asyncio.sleep(1.0)
+            subprocess.run(["modprobe","btbcm"], check=True)
+            subprocess.run(["modprobe","hci_uart"], check=True)
+            subprocess.run(["rfkill","unblock","bluetooth"], check=False)
+            subprocess.run(["systemctl","start","bluetooth"], check=True)
+            await asyncio.sleep(0.8)
+        except Exception as ex:
+            print(f"[emg] hard reset failed: {ex}")
+
+
     async def _bounce_adapter(self) -> None:
         """Toggle Adapter1.Powered off→on to clear funky controller state."""
         assert self.bus is not None and self._adapter_path is not None
@@ -434,6 +454,7 @@ class BleGattApp:
             print(f"[emg] RegisterAdvertisement failed ({e.type}: {e.text}) → recover and retry")
 
         # Recovery: bounce adapter, wait, stop discovery again, retry once
+        await self._hard_reset_stack()
         await self._bounce_adapter()
         await asyncio.sleep(0.8)  # small settle time after power-cycle
         await self._stop_discovery_if_needed(adapter_obj)
