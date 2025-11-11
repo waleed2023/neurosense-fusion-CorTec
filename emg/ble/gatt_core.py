@@ -408,10 +408,10 @@ class BleGattApp:
         # First try: stop discovery then register
         await self._stop_discovery_if_needed(adapter_obj)
         try:
-            subprocess.run(["modprobe", "-r", "hci_uart", "btbcm"], check=True)
-            subprocess.run(["sleep", "1"], check=True)
-            subprocess.run(["modprobe", "btbcm"], check=True)
-            subprocess.run(["modprobe", "hci_uart"], check=True)
+            subprocess.run(["/usr/sbin/modprobe","-r","hci_uart","btbcm"], check=True)
+            await asyncio.sleep(1.0)
+            subprocess.run(["/usr/sbin/modprobe","btbcm"], check=True)
+            subprocess.run(["/usr/sbin/modprobe","hci_uart"], check=True)
             await asyncio.sleep(0.8)
         except Exception as ex:
             print(f"[emg] hard reset failed: {ex}")
