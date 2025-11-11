@@ -388,8 +388,8 @@ class BleGattApp:
         props_iface = adapter_obj.get_interface(PROPERTIES_IFACE)
         powered_variant = await props_iface.call_get(ADAPTER_IFACE, "Powered")
         if not bool(powered_variant.value):
-            self._hard_reset_stack()
-            self._bounce_adapter()
+            await self._hard_reset_stack()
+            #self._bounce_adapter()
             await props_iface.call_set(ADAPTER_IFACE, "Powered", Variant("b", True))
 
 
