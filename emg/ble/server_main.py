@@ -40,8 +40,13 @@ async def main_async():
     ble_task = asyncio.create_task(ble_mgr.run())
     acc_task = asyncio.create_task(acc_mgr.run())
 
-    app = BleGattApp(local_name="NS-ProtoBLE", services=[emg_svc, acc_svc])
-    await app.run()  # registers services & starts advertising
+    app = BleGattApp(local_name="NS-ProtoBLE")
+    stop_adv = app.get_stop_adv_hook()
+    for ch in getattr(emg_svc, "chars", []):
+        if hasattr(ch, "set_on_start_notify"):
+            ch.set_on_start_notify(stop_adv)
+            break
+    await app.run(bus, [emg_svc, acc_svc])  # registers services & starts advertising
 
     print(f"{LOG_PREFIX} BLE ProtoBLE-Server running as 'NS-ProtoBLE'")
 
