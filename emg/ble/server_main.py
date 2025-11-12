@@ -39,7 +39,9 @@ async def main_async():
         service_uuids=[emg_svc.uuid],
     )
 
+
     # attach StartNotify hook to your EMG notify characteristic
+    stop_adv = app.get_stop_adv_hook()
     for ch in getattr(emg_svc, "chars", []):
         if getattr(ch, "uuid", "") == EMG_RET and hasattr(ch, "set_on_start_notify"):
             ch.set_on_start_notify(stop_adv)
