@@ -45,8 +45,6 @@ async def main_async():
 
     print(f"{LOG_PREFIX} BLE ProtoBLE-Server running as 'NS-ProtoBLE'")
 
-    sd_notify("WATCHDOG=1")
-
     # 4) wait for stop signal
     stop = asyncio.Event()
 
