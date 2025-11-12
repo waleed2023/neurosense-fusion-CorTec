@@ -130,7 +130,7 @@ def build_emg_service(bus, emg_broadcaster: Broadcaster) -> GattService:
     # RpcStream to manage the EMG streaming loop
     stream: Optional[RpcStream] = None
 
-    def on_param(data: bytes) -> None:
+    async def on_param(data: bytes) -> None:
         """
         Called whenever the client writes to EMG_PARAM.
 
@@ -143,7 +143,7 @@ def build_emg_service(bus, emg_broadcaster: Broadcaster) -> GattService:
         if stream is not None:
             stream.stop()
 
-        async def producer() -> None:
+        async def producer(send) -> None:
             await _emg_stream_loop(
                 send_bytes=send,
                 broadcaster=emg_broadcaster,
@@ -181,7 +181,7 @@ def build_acc_service(bus, acc_broadcaster: Broadcaster) -> GattService:
     # RpcStream to manage the accelerometer streaming loop
     stream: Optional[RpcStream] = None
 
-    def on_param(data: bytes) -> None:
+    async def on_param(data: bytes) -> None:
         """
         Called whenever the client writes to ACC_PARAM.
 
@@ -193,7 +193,7 @@ def build_acc_service(bus, acc_broadcaster: Broadcaster) -> GattService:
         if stream is not None:
             stream.stop()
 
-        async def producer() -> None:
+        async def producer(send) -> None:
             await _accel_stream_loop(
                 send_bytes=send,
                 broadcaster=acc_broadcaster,
