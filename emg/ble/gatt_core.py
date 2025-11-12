@@ -144,6 +144,10 @@ class NotifyChar(ServiceInterface):
         self._value: bytes = b""
         self._notifying: bool = False
         self._on_start_notify = on_start_notify
+        self._on_stop_notify = None
+
+    def set_on_stop_notify(self, cb):
+        self._on_stop_notify = cb
 
     @dbus_property(access=PropertyAccess.READ)
     def UUID(self) -> "s":
@@ -177,6 +181,12 @@ class NotifyChar(ServiceInterface):
     @method()
     def StopNotify(self) -> "":
         self._notifying = False
+        if self._on_stop_notify:
+            try:
+                self._on_stop_notify()
+            except Exception as ex:
+                print(f"[emg] StopNotify hook failed: {ex}")
+
 
     async def notify(self, data: bytes) -> None:
         self._value = data
@@ -310,6 +320,20 @@ class BleGattApp:
         self._gatt_chars: List[ServiceInterface] = []
         self._obj_manager: Optional[AppObjectManager] = None
 
+    async def resume_advertising(self):
+        if self._registered_adv or not self._adv:
+            return
+        try:
+            await self._stop_discovery_if_needed()
+            node = await self.bus.introspect(BLUEZ, self._adapter_path)
+            adapter_obj = self.bus.get_proxy_object(BLUEZ, self._adapter_path, node)
+            adv_mgr = adapter_obj.get_interface(LE_ADV_MANAGER_IFACE)
+            await adv_mgr.call_register_advertisement(self._adv.path, {})
+            self._registered_adv = True
+            print("[emg] resume_advertising() -> advertising resumed")
+        except Exception as ex:
+            print(f"[emg] resume_advertising failed: {ex}")
+
     async def _stop_discovery_if_needed(self):
         node = await self.bus.introspect("org.bluez", self._adapter_path)
         adapter_obj = self.bus.get_proxy_object("org.bluez", self._adapter_path, node)
@@ -436,6 +460,7 @@ class BleGattApp:
             if not self._registered_adv and self._adv is not None:
                 try:
                     await self._stop_discovery_if_needed()
+                    await self.bus.introspect(BLUEZ, self._adapter_path)
                     node = await self.bus.introspect(BLUEZ, self._adapter_path)
                     adapter_obj = self.bus.get_proxy_object(BLUEZ, self._adapter_path, node)
                     adv_mgr = adapter_obj.get_interface(LE_ADV_MANAGER_IFACE)

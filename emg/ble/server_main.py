@@ -44,7 +44,10 @@ async def main_async():
     for ch in getattr(emg_svc, "chars", []):
         if hasattr(ch, "set_on_start_notify"):
             ch.set_on_start_notify(stop_adv)
-            break
+        if hasattr(ch, "set_on_stop_notify"):
+            ch.set_on_stop_notify(lambda: asyncio.create_task(app.resume_advertising()))
+        break
+
 
     await app.run(bus, [emg_svc, acc_svc])
 
