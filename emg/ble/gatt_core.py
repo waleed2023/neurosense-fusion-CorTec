@@ -1,16 +1,28 @@
 #!/usr/bin/env python3
 """
-Simplified BlueZ GATT core using dbus-next with the minimal API expected by
-emg_acc_services.py (GattService, NotifyChar, WriteChar, RpcStream) plus an
-application helper (BleGattApp) and a minimal LEAdvertisement.
+BlueZ GATT core (dbus-next) — compact and production‑ready.
 
-Key behavior:
-  • Stops advertising when the client starts EMG notifications (StartNotify).
-  • Resumes advertising when the central disconnects.
-  • No kernel driver resets here; only clean D-Bus operations.
+What it does:
+  • Exposes a minimal GATT app with ObjectManager that BlueZ can introspect.
+  • Provides GattService / NotifyChar / WriteChar primitives used by emg_acc_services.
+  • Registers a minimal LE advertisement and keeps it in sync with connection state:
+      - Stop advertising when the client calls StartNotify (real data session).
+      - Resume advertising automatically on disconnect.
+  • No kernel driver resets or adapter bouncing here — only clean D‑Bus ops.
 
-D-Bus typing notes:
-  • All @method return annotations must be D-Bus signature strings. Use "" for void.
+API:
+  class GattService(path, uuid, primary=True)
+  class NotifyChar(path, uuid, service|service_path, on_start_notify=None)
+  class WriteChar(path, uuid, service|service_path, on_write: async (bytes)->None)
+  class RpcStream(producer_async)
+  class BleGattApp(app_path="/org/bluez/protoble", adapter_path="/org/bluez/hci0",
+                   local_name="NS-ProtoBLE", service_uuids=list)
+      await run(bus, [services...])
+      await stop()
+      get_stop_adv_hook() -> callable to wire into NotifyChar.set_on_start_notify
+
+Notes:
+  • All @method annotations use D‑Bus signature strings ("" for void) per dbus-next.
 """
 
 from __future__ import annotations
@@ -26,6 +38,7 @@ from dbus_next.service import ServiceInterface, method, dbus_property
 # ---- BlueZ interfaces / constants ----
 BLUEZ = "org.bluez"
 DBUS_PROP_IFACE = "org.freedesktop.DBus.Properties"
+OBJM_IFACE = "org.freedesktop.DBus.ObjectManager"
 ADAPTER_IFACE = "org.bluez.Adapter1"
 GATT_MGR_IFACE = "org.bluez.GattManager1"
 GATT_SERVICE_IFACE = "org.bluez.GattService1"
@@ -79,6 +92,7 @@ class BleAdvertisement(ServiceInterface):
 
     @method()
     def Release(self) -> "":
+        # BlueZ calls this when it frees the advertisement
         pass
 
 # ---------------------------------------------------------------------------
@@ -207,7 +221,6 @@ class WriteChar(ServiceInterface):
         if self._on_write is None:
             return
         try:
-            # schedule the async handler; D-Bus methods should be quick
             asyncio.create_task(self._on_write(bytes(value)))
         except Exception as ex:
             print(f"[emg] WriteValue dispatch failed: {ex}")
@@ -231,6 +244,44 @@ class RpcStream:
             self._task = None
 
 # ---------------------------------------------------------------------------
+#  ObjectManager for the GATT app (BlueZ calls GetManagedObjects at register)
+# ---------------------------------------------------------------------------
+class AppObjectManager(ServiceInterface):
+    """Exposes the GATT tree to BlueZ via org.freedesktop.DBus.ObjectManager."""
+
+    def __init__(self, app: "BleGattApp", path: str) -> None:
+        super().__init__(OBJM_IFACE)
+        self.path = path
+        self._app = app
+
+    @method()
+    def GetManagedObjects(self) -> "a{oa{sa{sv}}}":
+        managed: Dict[str, Dict[str, Dict[str, Variant]]] = {}
+
+        # Services
+        for svc in self._app._gatt_services:
+            managed[svc.path] = {
+                GATT_SERVICE_IFACE: {
+                    "UUID": Variant("s", svc.uuid),
+                    "Primary": Variant("b", bool(svc.primary)),
+                    "Device": Variant("o", "/"),
+                    "Includes": Variant("ao", []),
+                }
+            }
+
+        # Characteristics
+        for ch in self._app._gatt_chars:
+            managed[ch.path] = {
+                GATT_CHAR_IFACE: {
+                    "UUID": Variant("s", ch.uuid),
+                    "Service": Variant("o", ch.service_path),
+                    "Flags": Variant("as", ch.flags),
+                }
+            }
+
+        return managed
+
+# ---------------------------------------------------------------------------
 #  GATT App: export services, manage advertising, resume on disconnect
 # ---------------------------------------------------------------------------
 class BleGattApp:
@@ -252,6 +303,11 @@ class BleGattApp:
         self._adv: Optional[BleAdvertisement] = None
         self._registered_adv: bool = False
 
+        # Registries for ObjectManager
+        self._gatt_services: List[GattService] = []
+        self._gatt_chars: List[ServiceInterface] = []
+        self._obj_manager: Optional[AppObjectManager] = None
+
     async def run(self, bus: MessageBus, services: Iterable[ServiceInterface]) -> None:
         """Export services, register advertisement, install disconnect watcher."""
         self.bus = bus
@@ -262,13 +318,21 @@ class BleGattApp:
         gatt_mgr = adapter_obj.get_interface(GATT_MGR_IFACE)
         adv_mgr = adapter_obj.get_interface(LE_ADV_MANAGER_IFACE)
 
-        # Export services and their characteristics (if provided)
+        # Export ObjectManager at app root
+        self._obj_manager = AppObjectManager(self, self.app_path)
+        self.bus.export(self.app_path, self._obj_manager)
+        self._exported_paths.append(self.app_path)
+
+        # Export services and their characteristics; also track them
         for svc in services:
             self._export(svc)
-            # auto-export child chars if present
+            if isinstance(svc, GattService):
+                self._gatt_services.append(svc)
             for ch in getattr(svc, "chars", []) or []:
                 self._export(ch)
+                self._gatt_chars.append(ch)
 
+        # Now BlueZ can introspect the tree
         await gatt_mgr.call_register_application(self.app_path, {})
 
         # Create & export advertisement, then register it
@@ -350,7 +414,7 @@ class BleGattApp:
             val = changed["Connected"]
             connected = getattr(val, "value", val)
             if connected is True:
-                return  # start-notify hook already stopped ads
+                return  # StartNotify already stopped ads deterministically
             if not self._registered_adv and self._adv is not None:
                 try:
                     node = await self.bus.introspect(BLUEZ, self._adapter_path)
