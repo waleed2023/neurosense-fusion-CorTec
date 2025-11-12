@@ -7,7 +7,7 @@ from emg.ble_manager import BLEManager
 from emg.accel_manager import AccelManager
 from emg.config import LOG_PREFIX
 from .gatt_core import BleGattApp
-from .emg_acc_services import build_emg_service, build_acc_service
+from .emg_acc_services import build_emg_service, build_acc_service, EMG_SVC, ACC_SVC
 from dbus_next.aio import MessageBus
 from dbus_next import BusType
 
@@ -40,7 +40,12 @@ async def main_async():
     ble_task = asyncio.create_task(ble_mgr.run())
     acc_task = asyncio.create_task(acc_mgr.run())
 
-    app = BleGattApp(app_path="/app", local_name="NS-ProtoBLE")
+    app = BleGattApp(
+        app_path="/app",
+        local_name="NS-ProtoBLE",
+        service_uuids=[EMG_SVC, ACC_SVC],
+    )
+
     # attach StartNotify hook to your EMG notify characteristic
     stop_adv = app.get_stop_adv_hook()
     for ch in getattr(emg_svc, "chars", []):
