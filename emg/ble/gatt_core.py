@@ -88,7 +88,8 @@ class BleAdvertisement(ServiceInterface):
 
     # ---- D-Bus methods ----
     @method()
-    def Release(self) -> None:
+    def Release(self) -> "":
+
         # BlueZ may call this on shutdown/unregister; no action needed.
         pass
 
@@ -141,7 +142,8 @@ class NotifyChar(ServiceInterface):
         return self._value
 
     @method()
-    def StartNotify(self) -> None:
+    def StartNotify(self) -> "":
+
         self._notifying = True
         if self._on_start_notify:
             try:
@@ -150,7 +152,8 @@ class NotifyChar(ServiceInterface):
                 print(f"[emg] StartNotify hook failed: {ex}")
 
     @method()
-    def StopNotify(self) -> None:
+    def StopNotify(self) -> "":
+
         self._notifying = False
 
     async def notify(self, data: bytes) -> None:
