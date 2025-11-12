@@ -36,7 +36,7 @@ async def main_async():
     app = BleGattApp(
         app_path="/app",
         local_name="NS-ProtoBLE",
-        service_uuids=[emg_svc.uuid, acc_svc.uuid],
+        service_uuids=[emg_svc.uuid],
     )
 
     # attach StartNotify hook to your EMG notify characteristic
