@@ -1,124 +1,131 @@
 #!/usr/bin/env python3
 """
-Core GATT helper for BlueZ via dbus-next.
+Simplified BlueZ GATT core using dbus-next.
 
-This module wires together:
-  - D-Bus system bus connection
-  - Bluetooth adapter discovery and preparation
-  - GATT application (services + characteristics)
-  - LE advertising with auto‑recovery (stop discovery, power‑cycle adapter, retry)
+Goals:
+  • Keep only what we need: app registration, advertising, clean export/unexport.
+  • Stop advertising as soon as the tablet *really* starts streaming (StartNotify hook).
+  • Resume advertising automatically when the central disconnects.
+  • No kernel module resets, no heavy adapter bouncing here.
 
-Design goals:
-  * Keep the GATT objects minimal and compliant with BlueZ expectations.
-  * Keep the advertising packet small (name + first service UUID only).
-  * Register the advertisement once and keep it for the lifetime of the process.
-  * Provide a clean stop() for systemd shutdowns to avoid stale state.
+Usage sketch (outside this file):
+  - Build your EMG/ACC services/characteristics (e.g., in emg_acc_services.py).
+  - Pass the Notify characteristic an on_start_notify callback from
+    BleGattApp.get_stop_adv_hook(adapter_obj) *or* call set_on_start_notify() later.
+  - Start BleGattApp.run(bus, services) once.
 
-All comments from the original file are preserved in spirit and expanded where helpful.
+This module exports:
+  • BleAdvertisement: minimal LEAdvertisement1
+  • NotifyChar: a small characteristic helper with StartNotify hook
+  • BleGattApp: manages D-Bus exports, advertisement, and disconnect watcher
 """
 
-import subprocess
+from __future__ import annotations
+
 import asyncio
-from typing import Callable, Awaitable, List, Optional, Dict, Any
+from typing import Any, Callable, Dict, Iterable, List, Optional
 
-from dbus_next.errors import DBusError
 from dbus_next.aio import MessageBus
-from dbus_next import Variant, BusType
-from dbus_next.service import ServiceInterface, method, dbus_property
+from dbus_next import Variant
 from dbus_next.constants import PropertyAccess
+from dbus_next.service import ServiceInterface, method, dbus_property
 
-# ---- BlueZ / D-Bus constants ----
-BLUEZ                   = "org.bluez"
-ADAPTER_IFACE           = "org.bluez.Adapter1"
-GATT_MANAGER_IFACE      = "org.bluez.GattManager1"
-LE_ADV_MANAGER_IFACE    = "org.bluez.LEAdvertisingManager1"
-GATT_SERVICE_IFACE      = "org.bluez.GattService1"
-GATT_CHAR_IFACE         = "org.bluez.GattCharacteristic1"
-PROPERTIES_IFACE        = "org.freedesktop.DBus.Properties"
-OBJ_MANAGER_IFACE       = "org.freedesktop.DBus.ObjectManager"
-ADVERTISING_IFACE       = "org.bluez.LEAdvertisement1"
+# ---- BlueZ interfaces / constants ----
+BLUEZ = "org.bluez"
+OBJM_IFACE = "org.freedesktop.DBus.ObjectManager"
+DBUS_PROP_IFACE = "org.freedesktop.DBus.Properties"
+ADAPTER_IFACE = "org.bluez.Adapter1"
+GATT_MGR_IFACE = "org.bluez.GattManager1"
+GATT_SERVICE_IFACE = "org.bluez.GattService1"
+GATT_CHAR_IFACE = "org.bluez.GattCharacteristic1"
+LE_ADV_IFACE = "org.bluez.LEAdvertisement1"
+LE_ADV_MANAGER_IFACE = "org.bluez.LEAdvertisingManager1"
+DEVICE_IFACE = "org.bluez.Device1"
 
-# ---- Small helpers ----
+DEFAULT_APP_PATH = "/org/bluez/protoble"
+DEFAULT_ADV_PATH = f"{DEFAULT_APP_PATH}/advertisement0"
+DEFAULT_ADAPTER = "/org/bluez/hci0"
 
-class RpcStream:
-    """
-    Small helper to manage a long-running async producer task.
-
-    It is used for streaming loops (e.g. EMG / ACC) so they can be
-    started and cancelled cleanly when the client subscribes/unsubscribes.
-    """
-
-    def __init__(self, coro_factory: Callable[[], Awaitable[None]]):
-        self._coro_factory = coro_factory
-        self._task: Optional[asyncio.Task] = None
-
-    def start(self) -> None:
-        """Start (or restart) the underlying async task."""
-        self.stop()
-        loop = asyncio.get_running_loop()
-        self._task = loop.create_task(self._coro_factory())
-
-    def stop(self) -> None:
-        """Cancel the running task if any."""
-        if self._task is not None and not self._task.done():
-            self._task.cancel()
-        self._task = None
-
-
-# ---- GATT primitives ----
-
-class GattService(ServiceInterface):
-    """
-    Minimal implementation of org.bluez.GattService1 for a local GATT service.
-    """
-
-    def __init__(self, path: str, uuid: str, primary: bool = True):
-        super().__init__(GATT_SERVICE_IFACE)
+# ---------------------------------------------------------------------------
+#  Minimal LE Advertisement (LEAdvertisement1)
+# ---------------------------------------------------------------------------
+class BleAdvertisement(ServiceInterface):
+    def __init__(
+        self,
+        path: str,
+        local_name: str,
+        service_uuids: Iterable[str],
+        appearance: Optional[int] = None,
+        includes: Optional[List[str]] = None,
+    ) -> None:
+        super().__init__(LE_ADV_IFACE)
         self.path = path
-        self.uuid = uuid
-        self.primary = primary
-        self.chars: List[ServiceInterface] = []
+        self.local_name = local_name
+        self.service_uuids = list(service_uuids)
+        self.appearance = appearance
+        self.includes = includes or ["tx-power"]
+
+    # ---- D-Bus properties ----
+    @dbus_property(access=PropertyAccess.READ)
+    def Type(self) -> "s":
+        return "peripheral"
 
     @dbus_property(access=PropertyAccess.READ)
-    def UUID(self) -> "s":
-        return self.uuid
+    def LocalName(self) -> "s":
+        return self.local_name
 
     @dbus_property(access=PropertyAccess.READ)
-    def Primary(self) -> "b":
-        return self.primary
+    def ServiceUUIDs(self) -> "as":
+        return self.service_uuids
 
     @dbus_property(access=PropertyAccess.READ)
-    def Includes(self) -> "ao":
-        # No included services.
-        return []
+    def Includes(self) -> "as":
+        return self.includes
+
+    @dbus_property(access=PropertyAccess.READ)
+    def Appearance(self) -> "q":
+        return self.appearance or 0
+
+    # ---- D-Bus methods ----
+    @method()
+    def Release(self) -> None:
+        # BlueZ may call this on shutdown/unregister; no action needed.
+        pass
 
 
+# ---------------------------------------------------------------------------
+#  Minimal Notify characteristic with StartNotify hook
+# ---------------------------------------------------------------------------
 class NotifyChar(ServiceInterface):
-    """
-    Characteristic that supports 'read' and 'notify'.
+    """Simple characteristic that supports Read/Notify and fires a hook on StartNotify.
 
-    The application calls `await notify(bytes)` to push a new value.
-    If a client has called StartNotify, we emit a PropertiesChanged
-    signal on the 'Value' property so BlueZ will send a notification.
+    Not a full generic implementation—only what this project needs.
     """
 
-    def __init__(self, path: str, uuid: str, service: GattService):
+    def __init__(
+        self,
+        path: str,
+        uuid: str,
+        service_path: str,
+        on_start_notify: Optional[Callable[[], None]] = None,
+    ) -> None:
         super().__init__(GATT_CHAR_IFACE)
         self.path = path
         self.uuid = uuid
-        self.service = service
+        self.service_path = service_path
         self.flags: List[str] = ["read", "notify"]
-        # BlueZ / dbus-next expect 'ay' as Python 'bytes'
         self._value: bytes = b""
         self._notifying: bool = False
+        self._on_start_notify = on_start_notify
 
+    # ---- Properties ----
     @dbus_property(access=PropertyAccess.READ)
     def UUID(self) -> "s":
         return self.uuid
 
     @dbus_property(access=PropertyAccess.READ)
     def Service(self) -> "o":
-        return self.service.path
+        return self.service_path
 
     @dbus_property(access=PropertyAccess.READ)
     def Flags(self) -> "as":
@@ -126,528 +133,183 @@ class NotifyChar(ServiceInterface):
 
     @dbus_property(access=PropertyAccess.READ)
     def Value(self) -> "ay":
-        # Return raw bytes as required for 'ay'
         return self._value
 
+    # ---- Methods ----
     @method()
-    def ReadValue(self, options: "a{sv}") -> "ay":
-        """
-        Basic ReadValue implementation.
-        Returns the last value that was notified.
-        """
+    def ReadValue(self, _options: "a{sv}") -> "ay":
         return self._value
-    
-    def is_notifying(self) -> bool:
-        """
-        Check if notifications are currently enabled.
-        """
-        return self._notifying
 
     @method()
     def StartNotify(self) -> None:
-        """
-        Called by the client when it subscribes for notifications.
-        """
         self._notifying = True
+        if self._on_start_notify:
+            try:
+                self._on_start_notify()
+            except Exception as ex:
+                print(f"[emg] StartNotify hook failed: {ex}")
 
     @method()
     def StopNotify(self) -> None:
-        """
-        Called by the client when it unsubscribes from notifications.
-        """
         self._notifying = False
 
     async def notify(self, data: bytes) -> None:
-        """
-        Update the characteristic value and emit a PropertiesChanged signal
-        if notifications are currently enabled.
-        """
-        # Store as bytes (dbus-next will wrap this for signature 'ay')
         self._value = data
         if self._notifying:
             self.emit_properties_changed({"Value": self._value}, [])
 
+    # Utility to (re)wire the hook after construction
+    def set_on_start_notify(self, cb: Optional[Callable[[], None]]) -> None:
+        self._on_start_notify = cb
 
-class WriteChar(ServiceInterface):
-    """
-    Characteristic that supports 'write' / 'write-without-response'.
 
-    When a client writes to this characteristic, the provided callback
-    is invoked with the raw bytes.
-    """
-
+# ---------------------------------------------------------------------------
+#  GATT App: export services, manage advertising, react to disconnects
+# ---------------------------------------------------------------------------
+class BleGattApp:
     def __init__(
         self,
-        path: str,
-        uuid: str,
-        service: GattService,
-        on_write: Callable[[bytes], None],
-        flags: Optional[List[str]] = None,
-    ):
-        super().__init__(GATT_CHAR_IFACE)
-        self.path = path
-        self.uuid = uuid
-        self.service = service
-        self._on_write = on_write
-        # Allow overriding flags, but provide sensible defaults.
-        self.flags = flags or ["write", "write-without-response"]
-
-    @dbus_property(access=PropertyAccess.READ)
-    def UUID(self) -> "s":
-        return self.uuid
-
-    @dbus_property(access=PropertyAccess.READ)
-    def Service(self) -> "o":
-        return self.service.path
-
-    @dbus_property(access=PropertyAccess.READ)
-    def Flags(self) -> "as":
-        return self.flags
-
-    @method()
-    def WriteValue(self, value: "ay", options: "a{sv}") -> None:
-        """
-        Called by the client when it writes to this characteristic.
-        """
-        data = bytes(value)
-        self._on_write(data)
-
-    @method()
-    def ReadValue(self, options: "a{sv}") -> "ay":
-        """
-        Optional ReadValue implementation. For a pure write-only
-        characteristic we can just return an empty value.
-        """
-        return []
-
-
-class BleAdvertisement(ServiceInterface):
-    """
-    Minimal LE Advertisement object implementing org.bluez.LEAdvertisement1.
-    BlueZ often prefers when you only set the bare minimum.
-    """
-
-    def __init__(self, path: str, local_name: str, service_uuids: List[str]):
-        super().__init__(ADVERTISING_IFACE)
-        self.path = path
-        self._local_name = local_name
-        self._service_uuids = service_uuids
-
-    @dbus_property(access=PropertyAccess.READ)
-    def Type(self) -> "s":
-        # 'peripheral' = connectable advertisement.
-        return "peripheral"
-
-    @dbus_property(access=PropertyAccess.READ)
-    def LocalName(self) -> "s":
-        return self._local_name
-
-    @dbus_property(access=PropertyAccess.READ)
-    def ServiceUUIDs(self) -> "as":
-        return self._service_uuids
-
-    @dbus_property(access=PropertyAccess.READ)
-    def Includes(self) -> "as":
-        # Erstmal nichts extra bewerben – keep it simple.
-        return []
-
-    @method()
-    def Release(self) -> None:
-        """
-        Called by BlueZ when the advertisement is unregistered.
-        """
-        print("[emg] Advertisement released")
-
-
-class GattApplication(ServiceInterface):
-    """
-    Simple application root implementing org.freedesktop.DBus.ObjectManager.
-
-    BlueZ uses GetManagedObjects() to discover all services and characteristics
-    that belong to this application under a given root path.
-    """
-
-    def __init__(self, path: str, services: List[GattService]):
-        super().__init__(OBJ_MANAGER_IFACE)
-        self.path = path
-        self._services = services
-
-    @method()
-    def GetManagedObjects(self) -> "a{oa{sa{sv}}}":
-        """
-        Return a dictionary describing all managed objects (services
-        and characteristics) in this application.
-
-        The structure is:
-            {
-              object_path: {
-                interface_name: {
-                  property_name: Variant(...)
-                  ...
-                },
-                ...
-              },
-              ...
-            }
-        """
-        managed: Dict[str, Dict[str, Dict[str, Variant]]] = {}
-
-        for svc in self._services:
-            # Service object description
-            svc_entry: Dict[str, Dict[str, Variant]] = {}
-            svc_props: Dict[str, Variant] = {
-                "UUID": Variant("s", svc.uuid),
-                "Primary": Variant("b", svc.primary),
-                "Includes": Variant("ao", []),
-            }
-            svc_entry[GATT_SERVICE_IFACE] = svc_props
-            managed[svc.path] = svc_entry
-
-            # Characteristic objects for this service
-            for ch in getattr(svc, "chars", []):
-                ch_entry: Dict[str, Dict[str, Variant]] = {}
-                # Only describe GATT characteristics here.
-                if isinstance(ch, ServiceInterface) and ch.introspection.name == GATT_CHAR_IFACE:
-                    flags = getattr(ch, "flags", [])
-                    ch_props: Dict[str, Variant] = {
-                        "UUID": Variant("s", getattr(ch, "uuid", "")),
-                        "Service": Variant("o", svc.path),
-                        "Flags": Variant("as", flags),
-                    }
-                    ch_entry[GATT_CHAR_IFACE] = ch_props
-                    managed[ch.path] = ch_entry
-
-        return managed
-
-
-# ---- High level app that owns bus, adapter, services, advertisement ----
-
-class BleGattApp:
-    """
-    High-level helper that wires together:
-      - D-Bus system bus connection
-      - Bluetooth adapter discovery
-      - GATT application (services + characteristics)
-      - LE advertising (with auto‑recovery)
-
-    Usage:
-        app = BleGattApp(local_name="NeuroSense", services=[emg_svc, acc_svc])
-        await app.run()
-    """
-
-    def __init__(self, local_name: str, services: List[GattService]):
+        app_path: str = DEFAULT_APP_PATH,
+        adapter_path: Optional[str] = None,
+        local_name: str = "NS-ProtoBLE",
+        service_uuids: Optional[List[str]] = None,
+    ) -> None:
+        self.app_path = app_path
+        self._adapter_path = adapter_path or DEFAULT_ADAPTER
         self.local_name = local_name
-        self.services = services
+        self.service_uuids = service_uuids or []
+
         self.bus: Optional[MessageBus] = None
-        self._adapter_path: Optional[str] = None
+        self._exported_paths: List[str] = []
+
         self._adv: Optional[BleAdvertisement] = None
-        self._app_root: Optional[GattApplication] = None
-        # Internal guards/state
         self._registered_adv: bool = False
-        self._registering_lock = asyncio.Lock()
 
-    async def _find_adapter_path(self) -> str:
+    # --------------------------- Public API ---------------------------
+    async def run(self, bus: MessageBus, services: Iterable[ServiceInterface]) -> None:
+        """Export services, register advertisement, install disconnect watcher.
+        Call once.
         """
-        Try to locate a Bluetooth adapter that implements org.bluez.Adapter1.
+        self.bus = bus
 
-        If automatic discovery fails, fall back to '/org/bluez/hci0'
-        (common on Raspberry Pi) and raise if that also fails.
-        """
-        assert self.bus is not None
-
-        # Try to discover adapter via ObjectManager on '/'
-        try:
-            root = await self.bus.introspect(BLUEZ, "/")
-        except Exception:
-            root = None
-
-        adapter_path: Optional[str] = None
-
-        if root is not None:
-            for n in root.nodes:
-                candidate = f"/org/bluez/{n}"
-                try:
-                    node = await self.bus.introspect(BLUEZ, candidate)
-                except Exception:
-                    continue
-
-                for iface in node.interfaces:
-                    if iface.name == ADAPTER_IFACE:
-                        adapter_path = candidate
-                        break
-                if adapter_path:
-                    break
-
-        # Fallback to hci0 if discovery did not find anything.
-        if adapter_path is None:
-            fallback = "/org/bluez/hci0"
-            try:
-                await self.bus.introspect(BLUEZ, fallback)
-                print(f"[emg] Using fallback Bluetooth adapter path: {fallback}")
-                adapter_path = fallback
-            except Exception as e:
-                raise RuntimeError(f"no Bluetooth Adapter found ({e})")
-
-        return adapter_path
-
-    async def _ensure_powered(self, adapter_obj) -> None:
-        """Ensure the adapter is powered on (Adapter1.Powered = True)."""
-        props_iface = adapter_obj.get_interface(PROPERTIES_IFACE)
-        powered_variant = await props_iface.call_get(ADAPTER_IFACE, "Powered")
-        if not bool(powered_variant.value):
-            await self._hard_reset_stack()
-            #self._bounce_adapter()
-            await props_iface.call_set(ADAPTER_IFACE, "Powered", Variant("b", True))
-
-
-    async def _stop_discovery_if_needed(self, adapter_obj) -> None:
-        """Stop adapter discovery if active (BlueZ rejects adv while discovering)."""
-        props_iface = adapter_obj.get_interface(PROPERTIES_IFACE)
-        adapter_iface = adapter_obj.get_interface(ADAPTER_IFACE)
-        discovering = bool((await props_iface.call_get(ADAPTER_IFACE, "Discovering")).value)
-        if discovering:
-            try:
-                await adapter_iface.call_stop_discovery()
-            except Exception:
-                # Ignore; we'll still attempt registration
-                pass
-
-    async def _hard_reset_stack(self):
-        # Perform a hard reset of the Bluetooth stack via system commands.
-        # This is a last-resort recovery if bouncing the adapter via D-Bus fails.
-        # First try: stop discovery then register
-        #await self._stop_discovery_if_needed(adapter_obj)
-        try:
-            subprocess.run(["/usr/sbin/modprobe","-r","hci_uart","btbcm"], check=True)
-            await asyncio.sleep(1.0)
-            subprocess.run(["/usr/sbin/modprobe","btbcm"], check=True)
-            subprocess.run(["/usr/sbin/modprobe","hci_uart"], check=True)
-            await asyncio.sleep(0.8)
-        except Exception as ex:
-            print(f"[emg] hard reset failed: {ex}")
-
-
-    async def _bounce_adapter(self) -> None:
-        """Toggle Adapter1.Powered off→on to clear funky controller state."""
-        assert self.bus is not None and self._adapter_path is not None
+        # 1) Resolve adapter and managers
         node = await self.bus.introspect(BLUEZ, self._adapter_path)
-        obj = self.bus.get_proxy_object(BLUEZ, self._adapter_path, node)
-        props = obj.get_interface(PROPERTIES_IFACE)
-        try:
-            await props.call_set(ADAPTER_IFACE, "Powered", Variant("b", False))
-            await asyncio.sleep(0.6)
-            await props.call_set(ADAPTER_IFACE, "Powered", Variant("b", True))
-            print("[emg] Adapter power-cycled")
-        except Exception as e:
-            print(f"[emg] Adapter bounce failed: {e}")
-
-    async def _register_advertisement_with_recovery(self, adapter_obj) -> None:
-        """
-        Register advertisement; on failure, recover and retry once.
-        This specifically targets BlueZ errors like Authentication Failed (0x05),
-        Failed (0x03), and InProgress while discovery is active.
-        """
+        adapter_obj = self.bus.get_proxy_object(BLUEZ, self._adapter_path, node)
+        gatt_mgr = adapter_obj.get_interface(GATT_MGR_IFACE)
         adv_mgr = adapter_obj.get_interface(LE_ADV_MANAGER_IFACE)
 
-        # First try: stop discovery then register
-        await self._stop_discovery_if_needed(adapter_obj)
-        try:
-            await adv_mgr.call_register_advertisement(self._adv.path, {})
-            self._registered_adv = True
-            return
-        except DBusError as e:
-            print(f"[emg] RegisterAdvertisement failed ({e.type}: {e.text}) → recover and retry")
+        # 2) Export services and their children
+        for s in services:
+            self._export(s)
 
-        # Recovery: bounce adapter, wait, stop discovery again, retry once
-        await self._hard_reset_stack()
-        await self._bounce_adapter()
-        await asyncio.sleep(0.8)  # small settle time after power-cycle
-        await self._stop_discovery_if_needed(adapter_obj)
+        # Register the application with BlueZ
+        await gatt_mgr.call_register_application(self.app_path, {})
 
-        try:
-            await adv_mgr.call_register_advertisement(self._adv.path, {})
-            self._registered_adv = True
-            print("[emg] Advertisement registered after recovery")
-        except DBusError as e:
-            print(f"[emg] Retry RegisterAdvertisement failed ({e.type}: {e.text})")
-            raise
-
-
-    
-    # Trun off advtising when a central connects
-    def _is_device_signal(self, msg) -> bool:
-        return (
-            msg.member == "PropertiesChanged"
-            and msg.interface == "org.freedesktop.DBus.Properties"
-            and msg.path and msg.path.startswith("/org/bluez/hci")   # /org/bluez/hci0/dev_xx_xx...
-            and len(msg.body) >= 3
-            and msg.body[0] == "org.bluez.Device1"
+        # 3) Create & export advertisement, then register it
+        self._adv = BleAdvertisement(
+            DEFAULT_ADV_PATH, self.local_name, self.service_uuids
         )
+        self._export(self._adv)
+        await adv_mgr.call_register_advertisement(self._adv.path, {})
+        self._registered_adv = True
+        print(f"[emg] Advertising as '{self.local_name}' (services={self.service_uuids})")
 
-    async def _handle_device_props(self, path: str, changed: dict) -> None:
-        """
-        React to org.bluez.Device1 'Connected' flips:
-        - On connect  -> stop advertising (UnregisterAdvertisement)
-        - On disconnect -> resume advertising (RegisterAdvertisement with recovery)
-
-        Requirements (set elsewhere in BleGattApp):
-        * self.bus                : dbus_next.aio.MessageBus (connected)
-        * self._adapter_path      : e.g. "/org/bluez/hci0"
-        * self._adv               : your BleAdvertisement instance (has .path)
-        * self._registered_adv    : bool tracking current adv registration
-        * self._register_advertisement_with_recovery(adapter_obj) : coroutine
-        Optional:
-        * self._target_mac        : "AA:BB:CC:DD:EE:FF" to react only to that central
-        """
-        # 1) Only care about Connected changes
-        if "Connected" not in changed:
-            return
-
-        # dbus_next may wrap values in Variant; accept both
-        conn_val = changed["Connected"]
-        connected = getattr(conn_val, "value", conn_val)
-
-        # 2) Optional MAC filter: handle only the tablet (if configured)
-        try:
-            target_mac = getattr(self, "_target_mac", None)
-            if target_mac:
-                if not isinstance(target_mac, str) or len(target_mac) != 17:
-                    # Misconfigured; ignore the filter rather than breaking behaviour
-                    pass
-                else:
-                    suffix = target_mac.replace(":", "_").upper()
-                    if not path.upper().endswith(suffix):
-                        return
-        except Exception:
-            # Never let logging/formatting kill the signal path
-            pass
-
-        # 3) Resolve adapter + LEAdvertisingManager1 (fresh each time to survive bluez restarts)
-        try:
-            node = await self.bus.introspect("org.bluez", self._adapter_path)
-            adapter_obj = self.bus.get_proxy_object("org.bluez", self._adapter_path, node)
-            adv_mgr = adapter_obj.get_interface("org.bluez.LEAdvertisingManager1")
-        except Exception as ex:
-            print(f"[emg] watcher: could not get adv manager: {ex}")
-            return
-
-        # 4) Stop ads on connect
-        if connected:
-            if self._registered_adv and getattr(self, "_adv", None):
-                try:
-                    await adv_mgr.call_unregister_advertisement(self._adv.path)
-                    self._registered_adv = False
-                    print("[emg] Connected -> advertising stopped")
-                except Exception as ex:
-                    # If it was already gone, mark state accordingly
-                    self._registered_adv = False
-                    print(f"[emg] watcher: UnregisterAdvertisement failed (ok to ignore): {ex}")
-            return
-
-        # 5) Resume ads on disconnect
-        if not connected:
-            if (not self._registered_adv) and getattr(self, "_adv", None):
-                try:
-                    await self._register_advertisement_with_recovery(adapter_obj)
-                    print("[emg] Disconnected -> advertising resumed")
-                except Exception as ex:
-                    # Don't crash the signal path; recovery logic will retry elsewhere if needed
-                    print(f"[emg] watcher: re-register advertisement failed: {ex}")
-            return
-
-
-
-
-    async def run(self) -> None:
-        """
-        Connect to the system bus, export services and advertisement,
-        register the GATT application and start advertising (with auto‑recovery).
-        """
-        # Guard: only perform registration once per process
-        async with self._registering_lock:
-            if self._registered_adv:
-                return
-
-            # Connect to the system bus where BlueZ lives.
-            self.bus = await MessageBus(bus_type=BusType.SYSTEM).connect()
-
-            # Find an adapter.
-            self._adapter_path = await self._find_adapter_path()
-
-            # Proxy objects for the adapter
-            node = await self.bus.introspect(BLUEZ, self._adapter_path)
-            adapter_obj = self.bus.get_proxy_object(BLUEZ, self._adapter_path, node)
-
-            # Ensure powered on
-            await self._ensure_powered(adapter_obj)
-
-            # Export the application root (ObjectManager).
-            self._app_root = GattApplication("/app", self.services)
-            self.bus.export(self._app_root.path, self._app_root)
-
-            # Export all services and characteristics.
-            for svc in self.services:
-                self.bus.export(svc.path, svc)
-                for ch in svc.chars:
-                    self.bus.export(ch.path, ch)
-
-            # Register application with GattManager1.
-            gatt_mgr = adapter_obj.get_interface(GATT_MANAGER_IFACE)
-            await gatt_mgr.call_register_application(self._app_root.path, {})
-
-            # Prepare and export LE advertisement.
-            # IMPORTANT: Keep advertising packet small (max. 31 bytes),
-            # therefore we only advertise the first service UUID.
-            service_uuids = [self.services[0].uuid] if self.services else []
-            adv_path = "/org/bluez/protoble/advertisement0"
-            self._adv = BleAdvertisement(adv_path, self.local_name, service_uuids)
-            self.bus.export(self._adv.path, self._adv)
-
-            # Robust registration with auto-recovery
-            await self._register_advertisement_with_recovery(adapter_obj)
-            def _signal_handler(msg):
-                if not self._is_device_signal(msg):
-                    return
-                # Fire-and-forget to keep the D-Bus thread fast
-                asyncio.create_task(self._handle_device_props(msg.path, msg.body[1]))
-
-            self.bus.add_message_handler(_signal_handler)
-            print("[emg] Device connection watcher installed")
-            print(f"[emg] Advertising as '{self.local_name}' (services={service_uuids})")
+        # 4) Install watcher to resume ads on disconnect
+        self._install_disconnect_watcher()
+        print("[emg] Device connection watcher installed")
 
     async def stop(self) -> None:
-        """Unregister advertisement and unexport objects cleanly (optional but recommended)."""
-        if not self.bus or not self._adapter_path:
+        if not self.bus:
             return
         try:
-            node = await self.bus.introspect(BLUEZ, self._adapter_path)
-            adapter_obj = self.bus.get_proxy_object(BLUEZ, self._adapter_path, node)
-            adv_mgr = adapter_obj.get_interface(LE_ADV_MANAGER_IFACE)
-            if self._adv and self._registered_adv:
+            # Try to unregister advertisement gracefully
+            if self._registered_adv and self._adv is not None:
+                node = await self.bus.introspect(BLUEZ, self._adapter_path)
+                adapter_obj = self.bus.get_proxy_object(BLUEZ, self._adapter_path, node)
+                adv_mgr = adapter_obj.get_interface(LE_ADV_MANAGER_IFACE)
                 try:
                     await adv_mgr.call_unregister_advertisement(self._adv.path)
                 except Exception:
                     pass
         finally:
-            # Unexport objects (safe if already gone)
-            if self._adv:
-                try:
-                    self.bus.unexport(self._adv.path)
-                except Exception:
-                    pass
-            if self._app_root:
-                try:
-                    self.bus.unexport(self._app_root.path)
-                except Exception:
-                    pass
-            for svc in (self.services or []):
-                try:
-                    self.bus.unexport(svc.path)
-                except Exception:
-                    pass
-                for ch in getattr(svc, "chars", []):
-                    try:
-                        self.bus.unexport(ch.path)
-                    except Exception:
-                        pass
             self._registered_adv = False
+            # Unexport everything we exported
+            for path in reversed(self._exported_paths):
+                try:
+                    self.bus.unexport(path)
+                except Exception:
+                    pass
+            self._exported_paths.clear()
+
+    # Provide a hook to wire into your EMG Notify characteristic
+    def get_stop_adv_hook(self) -> Callable[[], None]:
+        def stop_now():
+            async def _do():
+                if not (self.bus and self._adv and self._registered_adv):
+                    return
+                try:
+                    node = await self.bus.introspect(BLUEZ, self._adapter_path)
+                    adapter_obj = self.bus.get_proxy_object(BLUEZ, self._adapter_path, node)
+                    adv_mgr = adapter_obj.get_interface(LE_ADV_MANAGER_IFACE)
+                    await adv_mgr.call_unregister_advertisement(self._adv.path)
+                    self._registered_adv = False
+                    print("[emg] StartNotify -> advertising stopped")
+                except Exception as ex:
+                    self._registered_adv = False
+                    print(f"[emg] stop_now: UnregisterAdvertisement failed: {ex}")
+
+            asyncio.create_task(_do())
+
+        return stop_now
+
+    # -------------------------- Internals ----------------------------
+    def _export(self, obj: ServiceInterface) -> None:
+        if not self.bus:
+            raise RuntimeError("BleGattApp.run() must be called first")
+        # Objects must have a stable .path attribute
+        path = getattr(obj, "path", None)
+        if not path:
+            raise ValueError(f"ServiceInterface {obj} missing .path")
+        self.bus.export(path, obj)
+        self._exported_paths.append(path)
+
+    def _install_disconnect_watcher(self) -> None:
+        assert self.bus is not None
+
+        def _is_device_signal(msg) -> bool:
+            return (
+                msg.member == "PropertiesChanged"
+                and msg.interface == DBUS_PROP_IFACE
+                and msg.path and msg.path.startswith("/org/bluez/hci")
+                and len(msg.body) >= 3
+                and msg.body[0] == DEVICE_IFACE
+            )
+
+        async def _on_device_props(path: str, changed: Dict[str, Any]) -> None:
+            if "Connected" not in changed:
+                return
+            val = changed["Connected"]
+            connected = getattr(val, "value", val)
+            if connected is True:
+                # Do nothing here—StartNotify hook already stopped ads deterministically.
+                return
+
+            # On disconnect: resume advertising if we have stopped it
+            if not self._registered_adv and self._adv is not None:
+                try:
+                    node = await self.bus.introspect(BLUEZ, self._adapter_path)
+                    adapter_obj = self.bus.get_proxy_object(BLUEZ, self._adapter_path, node)
+                    adv_mgr = adapter_obj.get_interface(LE_ADV_MANAGER_IFACE)
+                    await adv_mgr.call_register_advertisement(self._adv.path, {})
+                    self._registered_adv = True
+                    print("[emg] Disconnected -> advertising resumed")
+                except Exception as ex:
+                    print(f"[emg] watcher: failed to re-register advertisement: {ex}")
+
+        def _signal_handler(msg):
+            if not _is_device_signal(msg):
+                return
+            # Fire-and-forget to keep callback fast
+            asyncio.create_task(_on_device_props(msg.path, msg.body[1]))
+
+        self.bus.add_message_handler(_signal_handler)
