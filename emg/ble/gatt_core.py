@@ -472,6 +472,49 @@ class BleGattApp:
             print(f"[emg] Retry RegisterAdvertisement failed ({e.type}: {e.text})")
             raise
 
+
+    
+    # Trun off advtising when a central connects
+    def _is_device_signal(self, msg) -> bool:
+        return (
+            msg.member == "PropertiesChanged"
+            and msg.interface == "org.freedesktop.DBus.Properties"
+            and msg.path and msg.path.startswith("/org/bluez/hci")   # /org/bluez/hci0/dev_xx_xx...
+            and len(msg.body) >= 3
+            and msg.body[0] == "org.bluez.Device1"
+        )
+
+    async def _handle_device_props(self, path: str, changed: dict):
+        # Only react to "Connected" flips
+        if "Connected" not in changed:
+            return
+        connected = changed["Connected"].value if hasattr(changed["Connected"], "value") else changed["Connected"]
+
+        # Stop advertising on connect; resume on disconnect
+        try:
+            node = await self.bus.introspect("org.bluez", self._adapter_path)
+            adapter_obj = self.bus.get_proxy_object("org.bluez", self._adapter_path, node)
+            adv_mgr = adapter_obj.get_interface("org.bluez.LEAdvertisingManager1")
+        except Exception:
+            return
+
+        if connected and self._registered_adv:
+            # Tablet (central) is connected → stop advertising
+            try:
+                await adv_mgr.call_unregister_advertisement(self._adv_path)
+            except Exception:
+                pass
+            self._registered_adv = False
+            # Optional: log
+            print("[emg] Connected: advertising stopped")
+
+        if (not connected) and (not self._registered_adv):
+            # Central disconnected → start advertising again
+            await self._register_advertisement_with_recovery(adapter_obj)
+            print("[emg] Disconnected: advertising resumed")
+
+
+
     async def run(self) -> None:
         """
         Connect to the system bus, export services and advertisement,
@@ -519,7 +562,14 @@ class BleGattApp:
 
             # Robust registration with auto-recovery
             await self._register_advertisement_with_recovery(adapter_obj)
+            def _signal_handler(msg):
+                if not self._is_device_signal(msg):
+                    return
+                # Fire-and-forget to keep the D-Bus thread fast
+                asyncio.create_task(self._handle_device_props(msg.path, msg.body[1]))
 
+            self.bus.add_message_handler(_signal_handler)
+            print("[emg] Device connection watcher installed")
             print(f"[emg] Advertising as '{self.local_name}' (services={service_uuids})")
 
     async def stop(self) -> None:
