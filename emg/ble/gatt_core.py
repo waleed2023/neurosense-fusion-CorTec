@@ -310,12 +310,12 @@ class BleGattApp:
         self._gatt_chars: List[ServiceInterface] = []
         self._obj_manager: Optional[AppObjectManager] = None
 
-    async def _stop_discovery_if_needed(bus: MessageBus, adapter_path: str) -> None:
-        node = await bus.introspect("org.bluez", adapter_path)
-        adapter_obj = bus.get_proxy_object("org.bluez", adapter_path, node)
+    async def _stop_discovery_if_needed(self):
+        node = await self.bus.introspect("org.bluez", self._adapter_path)
+        adapter_obj = self.bus.get_proxy_object("org.bluez", self._adapter_path, node)
         props = adapter_obj.get_interface("org.freedesktop.DBus.Properties")
         val = await props.call_get("org.bluez.Adapter1", "Discovering")
-        discovering = getattr(val, "value", val)
+        discovering = bool(getattr(val, "value", val))
         if discovering:
             adapter = adapter_obj.get_interface("org.bluez.Adapter1")
             try:
