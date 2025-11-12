@@ -145,7 +145,7 @@ def build_emg_service(bus, emg_broadcaster: Broadcaster) -> GattService:
 
         async def producer() -> None:
             await _emg_stream_loop(
-                send_bytes=lambda b: ret_char.notify(b),
+                send_bytes=send,
                 broadcaster=emg_broadcaster,
                 req_bytes=data,
             )
@@ -195,7 +195,7 @@ def build_acc_service(bus, acc_broadcaster: Broadcaster) -> GattService:
 
         async def producer() -> None:
             await _accel_stream_loop(
-                send_bytes=lambda b: ret_char.notify(b),
+                send_bytes=send,
                 broadcaster=acc_broadcaster,
                 req_bytes=data,
             )
