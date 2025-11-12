@@ -82,7 +82,7 @@ def build_emg_service(bus, emg_broadcaster: Broadcaster) -> GattService:
         nonlocal stream
         if stream:
             stream.stop()
-        async def producer():
+        async def producer(_send):
             async def send(b: bytes):  # Adapter auf ret_char.notify
                 await ret_char.notify(b)
             await _emg_stream_loop(send_bytes=send, broadcaster=emg_broadcaster, req_bytes=data)
@@ -102,7 +102,7 @@ def build_acc_service(bus, acc_broadcaster: Broadcaster) -> GattService:
         nonlocal stream
         if stream:
             stream.stop()
-        async def producer():
+        async def producer(_send):
             async def send(b: bytes):
                 await ret_char.notify(b)
             await _acc_stream_loop(send_bytes=send, broadcaster=acc_broadcaster, req_bytes=data)
