@@ -355,7 +355,7 @@ class BleGattApp:
         # Create & export advertisement, then register it
         self._adv = BleAdvertisement(DEFAULT_ADV_PATH, self.local_name, self.service_uuids)
         self._export(self._adv)
-        await self._stop_discovery_if_needed(self.bus, self._adapter_path)
+        await self._stop_discovery_if_needed()
         await adv_mgr.call_register_advertisement(self._adv.path, {})
         self._registered_adv = True
         print(f"[emg] Advertising as '{self.local_name}' (services={self.service_uuids})")
