@@ -435,6 +435,7 @@ class BleGattApp:
                 return  # StartNotify already stopped ads deterministically
             if not self._registered_adv and self._adv is not None:
                 try:
+                    await self._stop_discovery_if_needed()
                     node = await self.bus.introspect(BLUEZ, self._adapter_path)
                     adapter_obj = self.bus.get_proxy_object(BLUEZ, self._adapter_path, node)
                     adv_mgr = adapter_obj.get_interface(LE_ADV_MANAGER_IFACE)
