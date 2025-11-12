@@ -412,7 +412,7 @@ class BleGattApp:
                 # Ignore; we'll still attempt registration
                 pass
 
-    async def hard_reset_stack(self):
+    async def _hard_reset_stack(self):
         # Perform a hard reset of the Bluetooth stack via system commands.
         # This is a last-resort recovery if bouncing the adapter via D-Bus fails.
         # First try: stop discovery then register

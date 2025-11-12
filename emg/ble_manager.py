@@ -88,36 +88,15 @@ class BLEManager:
         except Exception as e:
             sys.stderr.write(f"{LOG_PREFIX} on_emg error: {e}\n")
 
-
-    async def _bounce_adapter(self, path: str = "/org/bluez/hci0"):
-        """Toggle org.bluez.Adapter1.Powered off→on to recover BlueZ."""
-        try:
-            bus = await MessageBus(bus_type=BusType.SYSTEM).connect()
-            node = await bus.introspect("org.bluez", path)
-            obj = bus.get_proxy_object("org.bluez", path, node)
-            props = obj.get_interface("org.freedesktop.DBus.Properties")
-            await props.call_set("org.bluez.Adapter1", "Powered", Variant("b", False))
-            await asyncio.sleep(0.5)
-            await props.call_set("org.bluez.Adapter1", "Powered", Variant("b", True))
-            sys.stderr.write(f"{LOG_PREFIX} adapter power-cycled at {path}\n")
-        except Exception as e:
-            sys.stderr.write(f"{LOG_PREFIX} adapter bounce failed: {e}\n")
-
-
     
     async def run(self):
         backoff = 1.0
-        fails = 0
         while not self._stop.is_set():
             try:
                 mac = await self._resolve_mac()
                 if not mac:
                     await asyncio.sleep(backoff + random.uniform(0, 0.5))
                     backoff = min(backoff * 2, 10)
-                    fails += 1
-                    if fails >= 5:
-                        await self._bounce_adapter()
-                        fails = 0
                     continue
 
                 sys.stdout.write(f"{LOG_PREFIX} connecting to {mac} ...\n")
@@ -136,11 +115,9 @@ class BLEManager:
                     await c.start_notify(ANALOG_CHAR, self._on_emg)
                     sys.stdout.write(f"{LOG_PREFIX} EMG Notify active\n")
                     backoff = 1.0
-                    fails = 0
                     self._last_emg_ms = now_ms()
                     while c.is_connected and not self._stop.is_set():
                         await asyncio.sleep(0.5)
-                        
                         if self._idle_timeout_ms > 0 and self._last_emg_ms:
                             if (now_ms() - self._last_emg_ms) > self._idle_timeout_ms:
                                 sys.stdout.write(f"{LOG_PREFIX} no EMG for {self._idle_timeout_ms}ms → reconnect\n")
@@ -157,9 +134,5 @@ class BLEManager:
                 sys.stdout.write(f"{LOG_PREFIX} BLE: {e}\n")
                 await asyncio.sleep(backoff + random.uniform(0, 0.5))
                 backoff = min(backoff * 2, 10)
-                fails += 1
-                if fails >= 5:
-                    await self._bounce_adapter()
-                    fails = 0
             finally:
                 self._client = None
