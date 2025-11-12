@@ -40,13 +40,13 @@ async def main_async():
     )
 
     # attach StartNotify hook to your EMG notify characteristic
-    stop_adv = app.get_stop_adv_hook()
     for ch in getattr(emg_svc, "chars", []):
-        if hasattr(ch, "set_on_start_notify"):
+        if getattr(ch, "uuid", "") == EMG_RET and hasattr(ch, "set_on_start_notify"):
             ch.set_on_start_notify(stop_adv)
-        if hasattr(ch, "set_on_stop_notify"):
-            ch.set_on_stop_notify(lambda: asyncio.create_task(app.resume_advertising()))
-        break
+            if hasattr(ch, "set_on_stop_notify"):
+                ch.set_on_stop_notify(lambda: asyncio.create_task(app.resume_advertising()))
+            print("[emg] Hooks wired to EMG_RET (notify)")
+            break
 
 
     await app.run(bus, [emg_svc, acc_svc])
