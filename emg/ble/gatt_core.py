@@ -484,34 +484,77 @@ class BleGattApp:
             and msg.body[0] == "org.bluez.Device1"
         )
 
-    async def _handle_device_props(self, path: str, changed: dict):
-        # Only react to "Connected" flips
+    async def _handle_device_props(self, path: str, changed: dict) -> None:
+        """
+        React to org.bluez.Device1 'Connected' flips:
+        - On connect  -> stop advertising (UnregisterAdvertisement)
+        - On disconnect -> resume advertising (RegisterAdvertisement with recovery)
+
+        Requirements (set elsewhere in BleGattApp):
+        * self.bus                : dbus_next.aio.MessageBus (connected)
+        * self._adapter_path      : e.g. "/org/bluez/hci0"
+        * self._adv               : your BleAdvertisement instance (has .path)
+        * self._registered_adv    : bool tracking current adv registration
+        * self._register_advertisement_with_recovery(adapter_obj) : coroutine
+        Optional:
+        * self._target_mac        : "AA:BB:CC:DD:EE:FF" to react only to that central
+        """
+        # 1) Only care about Connected changes
         if "Connected" not in changed:
             return
-        connected = changed["Connected"].value if hasattr(changed["Connected"], "value") else changed["Connected"]
 
-        # Stop advertising on connect; resume on disconnect
+        # dbus_next may wrap values in Variant; accept both
+        conn_val = changed["Connected"]
+        connected = getattr(conn_val, "value", conn_val)
+
+        # 2) Optional MAC filter: handle only the tablet (if configured)
+        try:
+            target_mac = getattr(self, "_target_mac", None)
+            if target_mac:
+                if not isinstance(target_mac, str) or len(target_mac) != 17:
+                    # Misconfigured; ignore the filter rather than breaking behaviour
+                    pass
+                else:
+                    suffix = target_mac.replace(":", "_").upper()
+                    if not path.upper().endswith(suffix):
+                        return
+        except Exception:
+            # Never let logging/formatting kill the signal path
+            pass
+
+        # 3) Resolve adapter + LEAdvertisingManager1 (fresh each time to survive bluez restarts)
         try:
             node = await self.bus.introspect("org.bluez", self._adapter_path)
             adapter_obj = self.bus.get_proxy_object("org.bluez", self._adapter_path, node)
             adv_mgr = adapter_obj.get_interface("org.bluez.LEAdvertisingManager1")
-        except Exception:
+        except Exception as ex:
+            print(f"[emg] watcher: could not get adv manager: {ex}")
             return
 
-        if connected and self._registered_adv:
-            # Tablet (central) is connected → stop advertising
-            try:
-                await adv_mgr.call_unregister_advertisement(self._adv_path)
-            except Exception:
-                pass
-            self._registered_adv = False
-            # Optional: log
-            print("[emg] Connected: advertising stopped")
+        # 4) Stop ads on connect
+        if connected:
+            if self._registered_adv and getattr(self, "_adv", None):
+                try:
+                    await adv_mgr.call_unregister_advertisement(self._adv.path)
+                    self._registered_adv = False
+                    print("[emg] Connected -> advertising stopped")
+                except Exception as ex:
+                    # If it was already gone, mark state accordingly
+                    self._registered_adv = False
+                    print(f"[emg] watcher: UnregisterAdvertisement failed (ok to ignore): {ex}")
+            return
 
-        if (not connected) and (not self._registered_adv):
-            # Central disconnected → start advertising again
-            await self._register_advertisement_with_recovery(adapter_obj)
-            print("[emg] Disconnected: advertising resumed")
+        # 5) Resume ads on disconnect
+        if not connected:
+            if (not self._registered_adv) and getattr(self, "_adv", None):
+                try:
+                    await self._register_advertisement_with_recovery(adapter_obj)
+                    print("[emg] Disconnected -> advertising resumed")
+                except Exception as ex:
+                    # Don't crash the signal path; recovery logic will retry elsewhere if needed
+                    print(f"[emg] watcher: re-register advertisement failed: {ex}")
+            return
+
 
 
 
