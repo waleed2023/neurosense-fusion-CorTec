@@ -40,7 +40,7 @@ async def main_async():
     ble_task = asyncio.create_task(ble_mgr.run())
     acc_task = asyncio.create_task(acc_mgr.run())
 
-    app = BleGattApp(local_name="NS-ProtoBLE")
+    app = BleGattApp(app_path="/app", local_name="NS-ProtoBLE")
     # attach StartNotify hook to your EMG notify characteristic
     stop_adv = app.get_stop_adv_hook()
     for ch in getattr(emg_svc, "chars", []):
