@@ -32,18 +32,11 @@ async def main_async():
     emg_svc = build_emg_service(bus, emg_b)
     acc_svc = build_acc_service(bus, acc_b)
 
-    
-    # 3) Sensor-Manager (start reading sensors and publishing to Broadcaster)
-    ble_mgr = BLEManager(emg_b) # Connects to BLE EMG device and publishes EmgSample to emg_b
-    acc_mgr = AccelManager(acc_b) # Connects to Accel device and publishes AccelSample to acc_b
-
-    ble_task = asyncio.create_task(ble_mgr.run())
-    acc_task = asyncio.create_task(acc_mgr.run())
 
     app = BleGattApp(
         app_path="/app",
         local_name="NS-ProtoBLE",
-        service_uuids=[EMG_SVC, ACC_SVC],
+        service_uuids=[emg_svc.uuid, acc_svc.uuid],
     )
 
     # attach StartNotify hook to your EMG notify characteristic
@@ -54,6 +47,14 @@ async def main_async():
             break
 
     await app.run(bus, [emg_svc, acc_svc])
+
+
+    # 3) Sensor-Manager (start reading sensors and publishing to Broadcaster)
+    ble_mgr = BLEManager(emg_b) # Connects to BLE EMG device and publishes EmgSample to emg_b
+    acc_mgr = AccelManager(acc_b) # Connects to Accel device and publishes AccelSample to acc_b
+
+    ble_task = asyncio.create_task(ble_mgr.run())
+    acc_task = asyncio.create_task(acc_mgr.run())
 
     print(f"{LOG_PREFIX} BLE ProtoBLE-Server running as 'NS-ProtoBLE'")
 
