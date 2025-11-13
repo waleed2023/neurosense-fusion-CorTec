@@ -24,7 +24,7 @@ async def _emg_stream_loop(
     try:
         req.ParseFromString(req_bytes)
     except Exception:
-        req.max_rate_hz = 200
+        req.max_rate_hz = 200 # fallback max rate
     interval_s = 1.0 / max(1, req.max_rate_hz)
     last = 0.0
     loop = asyncio.get_running_loop()
@@ -51,7 +51,7 @@ async def _acc_stream_loop(
     try:
         req.ParseFromString(req_bytes)
     except Exception:
-        req.max_rate_hz = 100
+        req.max_rate_hz = 200
     interval_s = 1.0 / max(1, req.max_rate_hz)
     last = 0.0
     loop = asyncio.get_running_loop()
