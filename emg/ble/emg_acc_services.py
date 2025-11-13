@@ -25,7 +25,6 @@ async def _emg_stream_loop(
         req.ParseFromString(req_bytes)
     except Exception:
         req.max_rate_hz = 200
-    # einfache Zeitdrossel anhand Zielrate
     interval_s = 1.0 / max(1, req.max_rate_hz)
     last = 0.0
     loop = asyncio.get_running_loop()
@@ -74,11 +73,11 @@ async def _acc_stream_loop(
 
 def build_emg_service(bus, emg_broadcaster: Broadcaster) -> GattService:
     svc = GattService("/app/emg", EMG_SVC)
-    ret_char = NotifyChar("/app/emg/ret", EMG_RET, svc)   # KEIN on_stop_notify!
-    stream: Optional[RpcStream] = None                    # ein globaler Stream
+    ret_char = NotifyChar("/app/emg/ret", EMG_RET, svc) # Notify (EmgSample)
+    stream: Optional[RpcStream] = None                  # current RpcStream
 
     async def on_param(data: bytes) -> None:
-        """Client schreibt SubscribeRequest -> Stream (re)starten."""
+        """ Handle SubscribeRequest from client → (re)start stream."""
         nonlocal stream
         if stream:
             stream.stop()
