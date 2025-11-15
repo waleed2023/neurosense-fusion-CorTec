@@ -4,10 +4,9 @@ from .config import CLIENT_QUEUE_MAX, DROP_OLDEST_ON_FULL
 
 class Broadcaster:
     """
-    Verteilt Samples (beliebige Python-Objekte, z.B. EmgSample protobuf) an alle
-    aktiven Subscriber. Jeder Subscriber bekommt eine eigene asyncio.Queue mit Limit.
-    Bei voller Queue wird entweder der älteste Eintrag gedroppt (Policy) oder
-    das Sample verworfen.
+    Distributes samples (arbitrary Python objects, e.g. EmgSample protobuf) to all active subscribers.
+    Each subscriber receives its own asyncio.Queue with a limit.
+    When the queue is full, either the oldest entry is dropped (according to policy) or the new sample is discarded.
     """
     def __init__(self):
         self._subs: Set[asyncio.Queue] = set()
@@ -38,6 +37,6 @@ class Broadcaster:
                         try:
                             q.put_nowait(item)
                         except asyncio.QueueFull:
-                            # Subscriber hängt dauerhaft zurück → überspringen
+                            # stuck, give up
                             pass
-                    # sonst einfach drop
+                    # else:  # drop new item
