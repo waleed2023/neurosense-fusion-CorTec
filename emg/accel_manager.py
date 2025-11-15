@@ -19,7 +19,7 @@ REG_CTRL2_G         = 0x11
 REG_CTRL3_C         = 0x12
 OUTX_L_XL           = 0x28
 
-WHOAMI_EXPECTED = {0x6A, 0x6B, 0x69}
+WHOAMI_EXPECTED = {0x6A, 0x6B, 0x69} # possible values for LSM6DS3, LSM6DS4, LSM6DSO
 
 def to_s16(lo, hi):
     v = (hi << 8) | lo
@@ -77,6 +77,7 @@ class AccelManager:
         bus.write_byte_data(addr, REG_CTRL1_XL, odr_bits | fs_bits)
 
         # Disable gyro
+        # for now we don't use the gyro, so turn it off to save power
         bus.write_byte_data(addr, REG_CTRL2_G, 0x00)
 
         who = bus.read_byte_data(addr, REG_WHO_AM_I)
@@ -101,7 +102,7 @@ class AccelManager:
             with SMBus(I2C_BUS) as bus:
                 self._bus = bus
                 self._init_sensor(bus, I2C_ADDR)
-                sys.stderr.write(f"{LOG_PREFIX} Accel-Streaming started (I2C bus={I2C_BUS} addr=0x{I2C_ADDR:02X})\n")
+                sys.stdout.write(f"{LOG_PREFIX} Accel-Streaming started (I2C bus={I2C_BUS} addr=0x{I2C_ADDR:02X})\n")
                 last = 0.0
                 while not self._stop.is_set():
                     # Poll
@@ -118,6 +119,7 @@ class AccelManager:
                     await asyncio.sleep(sleep_t)
                     last = time.perf_counter()
         except asyncio.CancelledError:
+            sys.stdout.write(f"{LOG_PREFIX} Accel-Streaming stopped\n")
             pass
         except Exception as e:
-            sys.stderr.write(f"{LOG_PREFIX} Accel-Error: {e}\n")
+            sys.stdout.write(f"{LOG_PREFIX} Accel-Error: {e}\n")

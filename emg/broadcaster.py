@@ -37,6 +37,7 @@ class Broadcaster:
                         try:
                             q.put_nowait(item)
                         except asyncio.QueueFull:
+                            sys.stderr.write(f"{LOG_PREFIX} Broadcaster: queue full even after dropping oldest\n")
                             # stuck, give up
                             pass
                     # else:  # drop new item
