@@ -38,12 +38,15 @@ class BLEManager:
         except Exception:
             pass
 
-    async def _resolve_mac(self, timeout: float = 3.0) -> Optional[str]:
+    async def _resolve_mac(self, timeout: float) -> Optional[str]:
         """
         Resolve target MAC once.
         - if TARGET_MAC is configured or already cached, use it directly (no scan)
         - otherwise scan once by name and cache the result
         """
+        # this is the max time we wait for a scan
+        # set it after trying default parameter to avoid mypy error
+        timeout = 3.0
         # already cached → no scan
         if self._resolved_mac:
             return self._resolved_mac
@@ -51,19 +54,19 @@ class BLEManager:
         # env/config given → just use it and remember
         if TARGET_MAC:
             self._resolved_mac = TARGET_MAC
-            sys.stderr.write(f"{LOG_PREFIX} using configured MAC {self._resolved_mac}\n")
+            sys.stdout.write(f"{LOG_PREFIX} using configured MAC {self._resolved_mac}\n")
             return self._resolved_mac
 
         # no MAC known yet → one short scan by name
-        sys.stderr.write(f"{LOG_PREFIX} scanning for '{TARGET_NAME}' ...\n")
+        sys.stdout.write(f"{LOG_PREFIX} scanning for '{TARGET_NAME}' ...\n")
         devs = await BleakScanner.discover(timeout=timeout)
         target_lower = TARGET_NAME.lower()
 
-        for d in devs:
-            name = (d.name or "").lower()
+        for dev in devs:
+            name = (dev.name or "").lower()
             if target_lower in name:
-                self._resolved_mac = d.address
-                sys.stderr.write(f"{LOG_PREFIX} found {TARGET_NAME} at {self._resolved_mac}\n")
+                self._resolved_mac = dev.address
+                sys.stdout.write(f"{LOG_PREFIX} found {TARGET_NAME} at {self._resolved_mac}\n")
                 break
 
         if not self._resolved_mac:
@@ -100,35 +103,36 @@ class BLEManager:
                     continue
 
                 sys.stdout.write(f"{LOG_PREFIX} connecting to {mac} ...\n")
-                async with BleakClient(mac, timeout=15.0) as c:
-                    self._client = c
+                async with BleakClient(mac, timeout=15.0) as client:
+                    self._client = client
                     self._battery = 255
 
                     try:
-                        b = await c.read_gatt_char(BATTERY_CHAR)
+                        b = await client.read_gatt_char(BATTERY_CHAR)
                         if b and len(b) >= 1:
                             self._battery = int(b[0])
                         sys.stdout.write(f"{LOG_PREFIX} Battery {self._battery}%\n")
                     except Exception:
                         pass
 
-                    await c.start_notify(ANALOG_CHAR, self._on_emg)
+                    await client.start_notify(ANALOG_CHAR, self._on_emg)
                     sys.stdout.write(f"{LOG_PREFIX} EMG Notify active\n")
                     backoff = 1.0
                     self._last_emg_ms = now_ms()
-                    while c.is_connected and not self._stop.is_set():
+                    while client.is_connected and not self._stop.is_set():
                         await asyncio.sleep(0.5)
                         if self._idle_timeout_ms > 0 and self._last_emg_ms:
                             if (now_ms() - self._last_emg_ms) > self._idle_timeout_ms:
                                 sys.stdout.write(f"{LOG_PREFIX} no EMG for {self._idle_timeout_ms}ms → reconnect\n")
-                                await c.disconnect()   # breaks loop; outer while will retry
+                                await client.disconnect()   # breaks loop; outer while will retry
                                 break
                     try:
-                        await c.stop_notify(ANALOG_CHAR)
+                        await client.stop_notify(ANALOG_CHAR)
                     except Exception:
                         pass
 
             except asyncio.CancelledError:
+                sys.stdout.write(f"{LOG_PREFIX} BLE: Cancelled\n")
                 break
             except Exception as e:
                 sys.stdout.write(f"{LOG_PREFIX} BLE: {e}\n")

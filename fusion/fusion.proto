@@ -1,0 +1,62 @@
+syntax = "proto3";
+
+// ===== FUSION (EMG + ACCEL) =====
+
+message FusionSubscribeRequest {
+  // Maximale Rate für FusedSamples in Hz (z.B. 10 = alle 100 ms)
+  uint32 max_rate_hz = 1;
+
+  // Optional: ob Debugfelder (Counts, Valid-Flags) überhaupt befüllt werden sollen
+  bool send_debug_fields = 2;
+}
+
+// Server → Client: ein Fusionsfenster
+message FusedSample {
+  // Zeitpunkt des Fensters (z.B. Ende oder Mitte), gemeinsame Zeitbasis
+  uint64 ts_ms = 1;
+
+  // Laufende Nummer, damit der Client verlorene Pakete erkennen kann
+  uint32 seq   = 2;
+
+  // -------- EMG-Features --------
+
+  // z.B. RMS oder MAV im Fenster (0..1 normalisiert oder roh, wie du definierst)
+  float emg_level = 3;
+
+  // true, wenn genug EMG-Samples im Fenster vorhanden waren
+  bool  emg_valid = 4;
+
+  // Anzahl der EMG-Samples, die für dieses Fenster verwendet wurden
+  uint32 emg_count = 5;
+
+  // -------- ACC-Features --------
+
+  // z.B. mean(|mag|) im Fenster
+  float move_level = 6;
+
+  // Varianz der mag-Werte im Fenster (oder ein anderes Streuungsmaß)
+  float move_var = 7;
+
+  // true, wenn genug Accel-Samples im Fenster vorhanden waren
+  bool  acc_valid = 8;
+
+  // Anzahl der Accel-Samples im Fenster
+  uint32 acc_count = 9;
+
+  // -------- Meta / Qualitätsinfo --------
+
+  // Grober Bewegungszustand (z.B. 0=ruhig, 1=mittel, 2=stark)
+  uint32 motion_state = 10;
+
+  // EMG-Qualität (z.B. 0=gut, 1=ok, 2=schlecht)
+  uint32 emg_quality = 11;
+
+  // true, wenn insgesamt eine „vertrauenswürdige“ Fusion vorliegt
+  // (z.B. emg_valid && acc_valid && kein langer Zeitgap)
+  bool fused_valid = 12;
+}
+
+service Fusion {
+  // Server-Streaming RPC: der Client abonniert den Fusions-Stream
+  rpc StreamFusion(FusionSubscribeRequest) returns (stream FusedSample);
+}
