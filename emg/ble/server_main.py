@@ -39,7 +39,7 @@ async def main_async():
     app = BleGattApp(
         app_path="/app",
         local_name="NS-ProtoBLE",
-        service_uuids=[fusion_svc.uuid],
+        service_uuids=[emg_svc.uuid],
     )
 
 
