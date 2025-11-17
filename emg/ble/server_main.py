@@ -7,7 +7,7 @@ from emg.ble_manager import BLEManager
 from emg.accel_manager import AccelManager
 from emg.config import LOG_PREFIX
 from .gatt_core import BleGattApp
-from .emg_acc_services import build_emg_service, build_acc_service, EMG_SVC, ACC_SVC, EMG_RET
+from .emg_acc_services import build_emg_service, build_fusion_service, build_acc_service, EMG_SVC, ACC_SVC, FUSION_SVC, EMG_RET
 from dbus_next.aio import MessageBus
 from dbus_next import BusType
 
@@ -31,12 +31,13 @@ async def main_async():
     bus = await MessageBus(bus_type=BusType.SYSTEM).connect()
     emg_svc = build_emg_service(bus, emg_b)
     acc_svc = build_acc_service(bus, acc_b)
+    fusion_svc = build_fusion_service(bus, fusion_b)
 
 
     app = BleGattApp(
         app_path="/app",
         local_name="NS-ProtoBLE",
-        service_uuids=[emg_svc.uuid],
+        service_uuids=[emg_svc.uuid, acc_svc.uuid, fusion_svc.uuid],
     )
 
 
@@ -51,7 +52,7 @@ async def main_async():
             break
 
 
-    await app.run(bus, [emg_svc, acc_svc])
+    await app.run(bus, [emg_svc, acc_svc, fusion_svc])
 
 
     # 3) Sensor-Manager (start reading sensors and publishing to Broadcaster)
