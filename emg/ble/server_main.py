@@ -18,7 +18,7 @@ async def main_async():
     # 1) Broadcaster for EMG and Accel
     emg_b = Broadcaster()
     acc_b = Broadcaster()
-    #fusion_b = Broadcaster()
+    fusion_b = Broadcaster()
 
 
     # 2) D-Bus GATT App (services need the bus)
@@ -33,13 +33,13 @@ async def main_async():
     bus = await MessageBus(bus_type=BusType.SYSTEM).connect()
     emg_svc = build_emg_service(bus, emg_b)
     acc_svc = build_acc_service(bus, acc_b)
-    #fusion_svc = build_fusion_service(bus, fusion_b)
+    fusion_svc = build_fusion_service(bus, fusion_b)
 
 
     app = BleGattApp(
         app_path="/app",
         local_name="NS-ProtoBLE",
-        service_uuids=[emg_svc.uuid, acc_svc.uuid],
+        service_uuids=[emg_svc.uuid, acc_svc.uuid, fusion_svc.uuid],
     )
 
 
@@ -54,15 +54,15 @@ async def main_async():
             break
 
 
-    await app.run(bus, [emg_svc, acc_svc])
+    await app.run(bus, [emg_svc, acc_svc, fusion_svc])
 
 
     # 3) Sensor-Manager (start reading sensors and publishing to Broadcaster)
     ble_mgr = BLEManager(emg_b) # Connects to BLE EMG device and publishes EmgSample to emg_b
     acc_mgr = AccelManager(acc_b) # Connects to Accel device and publishes AccelSample to acc_b
-    #fusion_mgr = FusionManager(fusion_b, emg_b, acc_b) # Fuses EmgSample and AccelSample and publishes FusedSample to fusion_b
+    fusion_mgr = FusionManager(fusion_b, emg_b, acc_b) # Fuses EmgSample and AccelSample and publishes FusedSample to fusion_b
 
-    #fusion_task = asyncio.create_task(fusion_mgr.run())
+    fusion_task = asyncio.create_task(fusion_mgr.run())
     ble_task = asyncio.create_task(ble_mgr.run())
     acc_task = asyncio.create_task(acc_mgr.run())
 
