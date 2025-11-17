@@ -33,7 +33,7 @@ async def main_async():
     bus = await MessageBus(bus_type=BusType.SYSTEM).connect()
     emg_svc = build_emg_service(bus, emg_b)
     acc_svc = build_acc_service(bus, acc_b)
-    fusion_svc = build_fusion_service(bus, fusion_b)
+    #fusion_svc = build_fusion_service(bus, fusion_b)
 
 
     app = BleGattApp(
@@ -62,7 +62,7 @@ async def main_async():
     acc_mgr = AccelManager(acc_b) # Connects to Accel device and publishes AccelSample to acc_b
     fusion_mgr = FusionManager(fusion_b, emg_b, acc_b) # Fuses EmgSample and AccelSample and publishes FusedSample to fusion_b
 
-    fusion_task = asyncio.create_task(fusion_mgr.run())
+    #fusion_task = asyncio.create_task(fusion_mgr.run())
     ble_task = asyncio.create_task(ble_mgr.run())
     acc_task = asyncio.create_task(acc_mgr.run())
 
