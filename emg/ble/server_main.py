@@ -54,7 +54,7 @@ async def main_async():
             break
 
 
-    await app.run(bus, [emg_svc, acc_svc, fusion_svc])
+    await app.run(bus, [emg_svc, acc_svc])
 
 
     # 3) Sensor-Manager (start reading sensors and publishing to Broadcaster)
