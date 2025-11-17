@@ -38,7 +38,7 @@ class BLEManager:
         except Exception:
             pass
 
-    async def _resolve_mac(self, timeout: float) -> Optional[str]:
+    async def _resolve_mac(self, timeout: float = 3.0) -> Optional[str]:
         """
         Resolve target MAC once.
         - if TARGET_MAC is configured or already cached, use it directly (no scan)
@@ -46,7 +46,6 @@ class BLEManager:
         """
         # this is the max time we wait for a scan
         # set it after trying default parameter to avoid mypy error
-        timeout = 3.0
         # already cached → no scan
         if self._resolved_mac:
             return self._resolved_mac
