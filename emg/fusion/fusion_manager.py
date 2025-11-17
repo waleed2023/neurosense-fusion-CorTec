@@ -3,8 +3,8 @@ import asyncio
 import time
 from typing import Optional, List
 
-from .broadcaster import Broadcaster
-from .proto import emg_pb2, fusion_pb2
+from emg.broadcaster import Broadcaster
+from emg.proto import emg_pb2, fusion_pb2
 
 
 def now_ms() -> int:
