@@ -8,6 +8,7 @@ from emg.accel_manager import AccelManager
 from emg.config import LOG_PREFIX
 from .gatt_core import BleGattApp
 from .emg_acc_services import build_emg_service, build_fusion_service, build_acc_service, EMG_SVC, ACC_SVC, FUSION_SVC, EMG_RET
+from emg.fusion_service import FusionManager
 from dbus_next.aio import MessageBus
 from dbus_next import BusType
 
@@ -59,7 +60,7 @@ async def main_async():
     # 3) Sensor-Manager (start reading sensors and publishing to Broadcaster)
     ble_mgr = BLEManager(emg_b) # Connects to BLE EMG device and publishes EmgSample to emg_b
     acc_mgr = AccelManager(acc_b) # Connects to Accel device and publishes AccelSample to acc_b
-    fusion_mgr = FusionManager(fusion_b, emg_b, acc_b)
+    fusion_mgr = FusionManager(fusion_b, emg_b, acc_b) # Fuses EmgSample and AccelSample and publishes FusedSample to fusion_b
 
     fusion_task = asyncio.create_task(fusion_mgr.run())
     ble_task = asyncio.create_task(ble_mgr.run())
