@@ -60,7 +60,7 @@ async def main_async():
     # 3) Sensor-Manager (start reading sensors and publishing to Broadcaster)
     ble_mgr = BLEManager(emg_b) # Connects to BLE EMG device and publishes EmgSample to emg_b
     acc_mgr = AccelManager(acc_b) # Connects to Accel device and publishes AccelSample to acc_b
-    fusion_mgr = FusionManager(fusion_b, emg_b, acc_b) # Fuses EmgSample and AccelSample and publishes FusedSample to fusion_b
+    fusion_mgr = FusionManager(emg_b, acc_b, fusion_b) # Fuses EmgSample and AccelSample and publishes FusedSample to fusion_b
 
     #fusion_task = asyncio.create_task(fusion_mgr.run())
     ble_task = asyncio.create_task(ble_mgr.run())
