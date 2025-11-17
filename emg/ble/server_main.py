@@ -11,7 +11,6 @@ from .emg_acc_services import build_emg_service, build_fusion_service, build_acc
 from emg.fusion.fusion_manager import FusionManager
 from dbus_next.aio import MessageBus
 from dbus_next import BusType
-from emg.proto import fusion_pb2, fusion_pb2_grpc
 
 
 
