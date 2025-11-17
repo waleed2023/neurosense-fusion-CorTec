@@ -8,6 +8,7 @@ from emg.accel_manager import AccelManager
 from emg.config import LOG_PREFIX
 from .gatt_core import BleGattApp
 from .emg_acc_services import build_emg_service, build_fusion_service, build_acc_service, EMG_SVC, ACC_SVC, FUSION_SVC, EMG_RET
+from 
 from dbus_next.aio import MessageBus
 from dbus_next import BusType
 
@@ -17,6 +18,7 @@ async def main_async():
     # 1) Broadcaster for EMG and Accel
     emg_b = Broadcaster()
     acc_b = Broadcaster()
+    fusion_b = Broadcaster()
 
 
     # 2) D-Bus GATT App (services need the bus)
