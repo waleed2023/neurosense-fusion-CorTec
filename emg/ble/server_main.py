@@ -63,9 +63,9 @@ async def main_async():
     fusion_mgr = FusionManager(fusion_b, emg_b, acc_b) # Fuses EmgSample and AccelSample and publishes FusedSample to fusion_b
 
     #fusion_task = asyncio.create_task(fusion_mgr.run())
-    fusion_mgr.start()
     ble_task = asyncio.create_task(ble_mgr.run())
     acc_task = asyncio.create_task(acc_mgr.run())
+    fusion_mgr.start()
 
     print(f"{LOG_PREFIX} BLE ProtoBLE-Server running as 'NS-ProtoBLE'")
 
