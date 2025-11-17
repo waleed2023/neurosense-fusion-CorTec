@@ -18,7 +18,7 @@ async def main_async():
     # 1) Broadcaster for EMG and Accel
     emg_b = Broadcaster()
     acc_b = Broadcaster()
-    fusion_b = Broadcaster()
+    #fusion_b = Broadcaster()
 
 
     # 2) D-Bus GATT App (services need the bus)
