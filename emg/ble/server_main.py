@@ -11,7 +11,7 @@ from .emg_acc_services import build_emg_service, build_fusion_service, build_acc
 from emg.fusion.fusion_manager import FusionManager
 from dbus_next.aio import MessageBus
 from dbus_next import BusType
-
+from emg.proto import emg_pb2, fusion_pb2
 
 
 async def main_async():
@@ -62,7 +62,8 @@ async def main_async():
     acc_mgr = AccelManager(acc_b) # Connects to Accel device and publishes AccelSample to acc_b
     fusion_mgr = FusionManager(fusion_b, emg_b, acc_b) # Fuses EmgSample and AccelSample and publishes FusedSample to fusion_b
 
-    fusion_task = asyncio.create_task(fusion_mgr.run())
+    #fusion_task = asyncio.create_task(fusion_mgr.run())
+    fusion_mgr.start()
     ble_task = asyncio.create_task(ble_mgr.run())
     acc_task = asyncio.create_task(acc_mgr.run())
 
@@ -83,6 +84,7 @@ async def main_async():
     print(f"{LOG_PREFIX} Stop-Signal, cleaning up...")
     await ble_mgr.stop()
     await acc_mgr.stop()
+    await fusion_mgr.stop()
     await app.stop()
     ble_task.cancel()
     acc_task.cancel()
