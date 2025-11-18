@@ -145,7 +145,7 @@ class FusionManager:
             emg_rms = mean_sq ** 0.5
             # Normalize to [0,1] using 1000 as nominal max
             emg_level = emg_rms / 1000.0
-            print (f"EMG RMS: {emg_rms:.1f} → level {emg_level:.3f}")
+            #print (f"EMG RMS: {emg_rms:.1f} → level {emg_level:.3f}")
         else:
             # print("EMG data not valid")
             emg_level = 0.0
