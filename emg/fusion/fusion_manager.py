@@ -169,7 +169,7 @@ class FusionManager:
         else:
             move_level = 0.0
             move_var = 0.0
-        print(f"ACC move_level: {move_level:.3f}, move_var: {move_var:.3f}")
+       # print(f"ACC move_level: {move_level:.3f}, move_var: {move_var:.3f}")
 
         self._seq += 1
 
