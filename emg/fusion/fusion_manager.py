@@ -146,6 +146,7 @@ class FusionManager:
             # Normalize to [0,1] using 1000 as nominal max
             emg_level = emg_rms / 1000.0
         else:
+            print("EMG data not valid")
             emg_level = 0.0
 
         # --- ACC features: mean(|mag|) and variance of mag ---
