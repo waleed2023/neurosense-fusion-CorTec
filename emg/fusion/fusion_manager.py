@@ -145,8 +145,9 @@ class FusionManager:
             emg_rms = mean_sq ** 0.5
             # Normalize to [0,1] using 1000 as nominal max
             emg_level = emg_rms / 1000.0
+            print (f"EMG RMS: {emg_rms:.1f} → level {emg_level:.3f}")
         else:
-            print("EMG data not valid")
+            # print("EMG data not valid")
             emg_level = 0.0
 
         # --- ACC features: mean(|mag|) and variance of mag ---
@@ -168,6 +169,7 @@ class FusionManager:
         else:
             move_level = 0.0
             move_var = 0.0
+        print(f"ACC move_level: {move_level:.3f}, move_var: {move_var:.3f}")
 
         self._seq += 1
 
