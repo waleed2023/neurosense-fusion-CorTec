@@ -137,55 +137,62 @@ class FusionManager:
         ts_ms: int,
     ) -> Optional[fusion_pb2.FusedSample]:
         """
-        Compute independent window features for EMG and ACC:
+        Compute window-based features for EMG and ACC as *independent* pipelines,
+        then combine them into a single FusedSample.
 
-        - EMG path:
+        - EMG pipeline:
             * emg_level: RMS of EMG 'value' (0..1000), normalized to ~0..1
-            * emg_valid: True if we have at least min_emg_samples in this window
+            * emg_valid: True if at least min_emg_samples in this window
             * emg_count: number of EMG samples used
 
-        - ACC path:
+        - ACC pipeline:
             * move_level: mean(|mag|)
             * move_var: variance of mag (population variance)
-            * acc_valid: True if we have at least min_acc_samples in this window
+            * acc_valid: True if at least min_acc_samples in this window
             * acc_count: number of ACC samples used
 
         IMPORTANT:
         - EMG features depend ONLY on emg_window.
         - ACC features depend ONLY on acc_window.
-        - ACC never modifies or gates emg_level.
-        - We emit a FusedSample if AT LEAST ONE of (emg_valid, acc_valid) is True.
+        - EMG and ACC do not influence each other.
+        - Fusion (this method) is "dependent on both": it only emits a FusedSample
+          if *both* EMG and ACC are valid in this window.
         """
         emg_count = len(emg_window)
         acc_count = len(acc_window)
 
-        emg_valid = emg_count >= self._min_emg
-        acc_valid = acc_count >= self._min_acc
+        # Per-stream validity
+        min_emg = getattr(self, "_min_emg_samples", 1)
+        min_acc = getattr(self, "_min_acc_samples", 1)
 
-        # If neither stream has usable data, skip this window completely.
-        # Note: we do NOT require both to be valid, only "at least one".
-        if not emg_valid and not acc_valid:
+        emg_valid = emg_count >= min_emg
+        acc_valid = acc_count >= min_acc
+
+        # --- Fusion depends on both streams ---
+        # If you ever want "at least one stream is valid", change this to:
+        #   if not emg_valid and not acc_valid: return None
+        if not emg_valid or not acc_valid:
             return None
 
         # ------------- EMG FEATURES (independent from ACC) -------------
         if emg_valid:
-            # Compute RMS of EMG value (0..1000), then normalize to ~0..1.
+            # RMS of EMG values (0..1000)
             sq_sum = 0.0
             for s in emg_window:
                 v = float(s.value)
                 sq_sum += v * v
             mean_sq = sq_sum / float(emg_count)
-            emg_rms = mean_sq ** 0.5
+            emg_rms = mean_sq**0.5
 
-            # Use 1000 as a nominal "full scale" for normalization.
+            # Normalize to ~0..1 assuming full scale ~1000
             emg_level = emg_rms / 1000.0
         else:
-            # No valid EMG samples in this window.
+            # Should not happen because of gate above, but keep for safety
             emg_level = 0.0
 
         # ------------- ACC FEATURES (independent from EMG) -------------
         if acc_valid:
-            # Use |mag| as simple motion magnitude.
+            # Use |mag| as simple motion magnitude
             mags = [float(abs(s.mag)) for s in acc_window]
 
             # Mean(|mag|)
@@ -202,7 +209,6 @@ class FusionManager:
             else:
                 move_var = 0.0
         else:
-            # No valid ACC samples in this window.
             move_level = 0.0
             move_var = 0.0
 
