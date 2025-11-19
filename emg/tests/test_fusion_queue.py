@@ -63,7 +63,7 @@ async def main_async() -> None:
     N_ACC = 10000
 
     emg_task = asyncio.create_task(emg_producer(emg_b, N_EMG, hz=100.0))
-    acc_task = asyncio.create_task(acc_producer(acc_b, N_ACC, hz=833.0))
+    acc_task = asyncio.create_task(acc_producer(acc_b, N_ACC, hz=1600.0))
 
     emg_produced, acc_produced = await asyncio.gather(emg_task, acc_task)
 
