@@ -59,11 +59,11 @@ async def main_async() -> None:
 
     # 3) Start producers
     #    You can adjust these numbers if you want to stress the queues more.
-    N_EMG = 10000
-    N_ACC = 1000000
+    N_EMG = 1000
+    N_ACC = 10000
 
     emg_task = asyncio.create_task(emg_producer(emg_b, N_EMG, hz=10.0))
-    acc_task = asyncio.create_task(acc_producer(acc_b, N_ACC, hz=100.0))
+    acc_task = asyncio.create_task(acc_producer(acc_b, N_ACC, hz=833.0))
 
     emg_produced, acc_produced = await asyncio.gather(emg_task, acc_task)
 
