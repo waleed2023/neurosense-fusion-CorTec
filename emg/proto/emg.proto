@@ -16,6 +16,10 @@ message EmgSample {
   uint32 battery = 3; // 0..100; 255 = unbekannt
 }
 
+message EmgSamplePacket {
+  repeated EmgSample samples = 1;
+}
+
 service Emg {
   // BLE:
   //   Service UUID:  f8c94a20-9f1f-4f5a-8ad1-3d1b7c0a1000

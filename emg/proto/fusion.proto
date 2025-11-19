@@ -15,6 +15,12 @@ message FusionSubscribeRequest {
   uint32 max_rate_hz = 1;
 }
 
+
+message AccelSamplePacket {
+  repeated AccelSample samples = 1;
+}
+
+
 // A fused sample summarizes one time window of EMG + accelerometer data.
 message FusedSample {
   // Timestamp of the window (e.g. end or center of the window), epoch ms.
