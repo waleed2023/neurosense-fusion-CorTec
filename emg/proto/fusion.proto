@@ -16,8 +16,8 @@ message FusionSubscribeRequest {
 }
 
 
-message AccelSamplePacket {
-  repeated AccelSample samples = 1;
+message FusedSamplePacket {
+  repeated FusedSample  samples = 1;
 }
 
 

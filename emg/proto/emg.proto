@@ -37,6 +37,11 @@ message AccelSubscribeRequest {
   uint32 axis = 2;
 }
 
+
+message AccelSamplePacket {
+  repeated AccelSample samples = 1;
+}
+
 message AccelSample {
   double ax = 1;   // g
   double ay = 2;   // g
