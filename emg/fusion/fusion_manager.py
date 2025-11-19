@@ -25,7 +25,7 @@ class FusionManager:
         fusion_broadcaster: Broadcaster,
         *,
         window_ms: int = 200,
-        step_ms: int = 100,
+        step_ms: int = 200,
         min_emg_samples: int = 1,
         min_acc_samples: int = 1,
     ):
@@ -41,6 +41,11 @@ class FusionManager:
         self._task: Optional[asyncio.Task] = None
         self._seq: int = 0
 
+        # Debug counters for test code (removed later)
+        self._debug_emg_read: int = 0
+        self._debug_acc_read: int = 0
+
+
     def start(self) -> None:
         if self._task is None:
             self._task = asyncio.create_task(self._run(), name="fusion-manager")
@@ -53,6 +58,18 @@ class FusionManager:
             except asyncio.CancelledError:
                 pass
             self._task = None
+    # debug properties, removed later
+    @property
+    def debug_emg_read(self) -> int:
+        """Number of EMG samples read from the EMG queue."""
+        return self._debug_emg_read
+
+    # debug properties, removed later
+    @property
+    def debug_acc_read(self) -> int:
+        """Number of ACC samples read from the ACC queue."""
+        return self._debug_acc_read
+
 
     async def _run(self) -> None:
         emg_q = await self._emg_b.subscribe()
@@ -69,6 +86,7 @@ class FusionManager:
                 try:
                     while True:
                         s = emg_q.get_nowait()
+                        self._debug_emg_read += 1 # count how EMG samples are consumed
                         emg_buf.append(s)
                 except asyncio.QueueEmpty:
                     pass
@@ -77,6 +95,7 @@ class FusionManager:
                 try:
                     while True:
                         s = acc_q.get_nowait()
+                        self._debug_acc_read += 1 # count how ACC samples are consumed
                         acc_buf.append(s)
                 except asyncio.QueueEmpty:
                     pass

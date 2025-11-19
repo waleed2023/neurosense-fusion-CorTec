@@ -33,6 +33,7 @@ class Broadcaster:
                         try:
                             _ = q.get_nowait()
                         except asyncio.QueueEmpty:
+                            sys.stderr.write(f"{LOG_PREFIX} Broadcaster: queue empty when dropping oldest\n")
                             pass
                         try:
                             q.put_nowait(item)
