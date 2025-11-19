@@ -7,56 +7,30 @@ option java_outer_classname = "FusionProto";
 
 // ===== FUSION (EMG + ACCEL) =====
 
-// Subscribe parameters for the fusion stream
 message FusionSubscribeRequest {
-  // Maximum output rate of fused samples (e.g. 10 Hz).
-  // This is a client-side throttling hint and does not affect
-  // the internal fusion windowing logic.
   uint32 max_rate_hz = 1;
 }
 
-
-message FusedSamplePacket {
-  repeated FusedSample  samples = 1;
-}
-
-
-// A fused sample summarizes one time window of EMG + accelerometer data.
 message FusedSample {
-  // Timestamp of the window (e.g. end or center of the window), epoch ms.
-  uint64 ts_ms        = 1;
+  uint64 ts_ms     = 1;
+  uint32 seq       = 2;
 
-  // Monotonic sequence number to detect lost packets.
-  uint32 seq          = 2;
+  float  emg_level = 3;
+  bool   emg_valid = 4;
+  uint32 emg_count = 5;
 
-  // ---- EMG window features (inputs for later evaluation) ----
-
-  // EMG activity level in the window (e.g. RMS or MAV, optionally normalized 0..1).
-  float  emg_level    = 3;
-
-  // True if a sufficient number of EMG samples were available in the window.
-  bool   emg_valid    = 4;
-
-  // Number of EMG samples used to compute EMG features.
-  uint32 emg_count    = 5;
-
-  // ---- Accelerometer window features (inputs for later evaluation) ----
-
-  // Motion level in the window, e.g. mean(|mag|).
-  float  move_level   = 6;
-
-  // Variance of mag in the window (measure of "unsteadiness"/jitter).
-  float  move_var     = 7;
-
-  // True if a sufficient number of accelerometer samples were available.
-  bool   acc_valid    = 8;
-
-  // Number of accelerometer samples used to compute ACC features.
-  uint32 acc_count    = 9;
+  float  move_level = 6;
+  float  move_var   = 7;
+  bool   acc_valid  = 8;
+  uint32 acc_count  = 9;
 }
 
-// gRPC service for fusion (similar to Emg/Accel services).
+// Paket mit mehreren FusedSample
+message FusedSamplePacket {
+  repeated FusedSample samples = 1;
+}
+
+// gRPC service for fusion
 service Fusion {
   rpc StreamFusion(FusionSubscribeRequest) returns (stream FusedSample);
-  rpc StreamFusionPackets(FusionSubscribeRequest) returns (stream FusedSamplePacket);
 }

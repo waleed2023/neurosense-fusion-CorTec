@@ -16,30 +16,20 @@ message EmgSample {
   uint32 battery = 3; // 0..100; 255 = unbekannt
 }
 
+// Paket mit mehreren EMG Samples
 message EmgSamplePacket {
   repeated EmgSample samples = 1;
 }
 
 service Emg {
-  // BLE:
-  //   Service UUID:  f8c94a20-9f1f-4f5a-8ad1-3d1b7c0a1000
-  //   Param UUID:    f8c94a20-9f1f-4f5a-8ad1-3d1b7c0a1001
-  //   Return UUID:   f8c94a20-9f1f-4f5a-8ad1-3d1b7c0a1002
+  // gRPC-Service (falls genutzt). BLE verwendet nur die Messages.
   rpc StreamEmg(SubscribeRequest) returns (stream EmgSample);
-
-  rpc StreamEmgPackets(SubscribeRequest) returns (stream EmgSamplePacket);
 }
-
 
 // ===== ACCEL =====
 message AccelSubscribeRequest {
   uint32 max_rate_hz = 1;
   uint32 axis = 2;
-}
-
-
-message AccelSamplePacket {
-  repeated AccelSample samples = 1;
 }
 
 message AccelSample {
@@ -50,12 +40,11 @@ message AccelSample {
   uint64 ts_ms = 5;
 }
 
-service Accel {
-  // BLE:
-  //   Service UUID:  f8c94a20-9f1f-4f5a-8ad1-3d1b7c0a2000
-  //   Param UUID:    f8c94a20-9f1f-4f5a-8ad1-3d1b7c0a2001
-  //   Return UUID:   f8c94a20-9f1f-4f5a-8ad1-3d1b7c0a2002
-  rpc StreamAccel(AccelSubscribeRequest) returns (stream AccelSample);
+// Paket mit mehreren ACC Samples
+message AccelSamplePacket {
+  repeated AccelSample samples = 1;
+}
 
-  rpc StreamAccelPackets(AccelSubscribeRequest) returns (stream AccelSamplePacket);
+service Accel {
+  rpc StreamAccel(AccelSubscribeRequest) returns (stream AccelSample);
 }
