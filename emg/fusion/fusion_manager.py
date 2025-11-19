@@ -24,7 +24,7 @@ class FusionManager:
         acc_broadcaster: Broadcaster,
         fusion_broadcaster: Broadcaster,
         *,
-        window_ms: int = 350,
+        window_ms: int = 550,
         step_ms: int = 100,
         min_emg_samples: int = 1,
         min_acc_samples: int = 1,
