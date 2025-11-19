@@ -12,23 +12,63 @@ class EmgService(emg_pb2_grpc.EmgServicer):
     def __init__(self, broadcaster):
         self.broadcaster = broadcaster
 
-    async def StreamEmg(self, request: emg_pb2.SubscribeRequest, context: grpc.aio.ServicerContext):
+    async def StreamEmgPackets(
+        self,
+        request: emg_pb2.SubscribeRequest,
+        context: grpc.aio.ServicerContext,
+    ):
+        """
+        Streams merged packets of EmgSample.
+        Each reply contains all samples that are currently waiting in the broadcaster queue.
+        """
         q = await self.broadcaster.subscribe()
         try:
+            # Interpret max_rate_hz as "max packets per second"
             interval = 0.0
             if request.max_rate_hz > 0:
                 interval = max(0.0, 1.0 / float(request.max_rate_hz))
 
-            last_ts = 0.0
+            loop = asyncio.get_running_loop()
+            last_send = 0.0
+
+            MAX_SAMPLES_PER_PACKET = 64   # max samples per packet
+            MAX_WAIT_S = 0.02             # max extra delay to gather more samples
+
             while True:
-                sample: emg_pb2.EmgSample = await q.get()
+                # 1) Wait for at least one sample (blocking)
+                first: emg_pb2.EmgSample = await q.get()
+                batch = [first]
+                start = loop.time()
+
+                # 2) Drain queue: merge all samples that arrive shortly after
+                while len(batch) < MAX_SAMPLES_PER_PACKET:
+                    remaining = MAX_WAIT_S - (loop.time() - start)
+                    if remaining <= 0:
+                        break
+                    try:
+                        nxt = await asyncio.wait_for(q.get(), timeout=remaining)
+                        batch.append(nxt)
+                    except asyncio.TimeoutError:
+                        break
+
+                # 3) Optional f by packets per second
                 if interval > 0.0:
-                    now = time.perf_counter()
-                    if (now - last_ts) < interval:
-                        continue
-                    last_ts = now
-                yield sample
+                    now = loop.time()
+                    delta = now - last_send
+                    if delta < interval:
+                        await asyncio.sleep(interval - delta)
+                        last_send = loop.time()
+                    else:
+                        last_send = now
+
+                # 4) Build packet and yield once
+                packet = emg_pb2.EmgSamplePacket()
+                packet.samples.extend(batch)
+
+                yield packet
+
         except asyncio.CancelledError:
+            sys.stderr.write(f"{LOG_PREFIX} EmgService.StreamEmgPackets cancelled\n")
             raise
         finally:
             await self.broadcaster.unsubscribe(q)

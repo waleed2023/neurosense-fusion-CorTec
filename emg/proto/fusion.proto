@@ -52,4 +52,5 @@ message FusedSample {
 // gRPC service for fusion (similar to Emg/Accel services).
 service Fusion {
   rpc StreamFusion(FusionSubscribeRequest) returns (stream FusedSample);
+  rpc StreamFusionPackets(FusionSubscribeRequest) returns (stream FusedSamplePacket);
 }
