@@ -137,11 +137,24 @@ class FusionManager:
         ts_ms: int,
     ) -> Optional[fusion_pb2.FusedSample]:
         """
-        Compute basic window features:
-        - emg_level: simple RMS over EMG value
-        - move_level: mean(|mag|)
-        - move_var: variance of mag
-        plus valid flags and counts.
+        Compute independent window features for EMG and ACC:
+
+        - EMG path:
+            * emg_level: RMS of EMG 'value' (0..1000), normalized to ~0..1
+            * emg_valid: True if we have at least min_emg_samples in this window
+            * emg_count: number of EMG samples used
+
+        - ACC path:
+            * move_level: mean(|mag|)
+            * move_var: variance of mag (population variance)
+            * acc_valid: True if we have at least min_acc_samples in this window
+            * acc_count: number of ACC samples used
+
+        IMPORTANT:
+        - EMG features depend ONLY on emg_window.
+        - ACC features depend ONLY on acc_window.
+        - ACC never modifies or gates emg_level.
+        - We emit a FusedSample if AT LEAST ONE of (emg_valid, acc_valid) is True.
         """
         emg_count = len(emg_window)
         acc_count = len(acc_window)
@@ -149,47 +162,51 @@ class FusionManager:
         emg_valid = emg_count >= self._min_emg
         acc_valid = acc_count >= self._min_acc
 
-        # If neither stream has usable data, skip this window completely
+        # If neither stream has usable data, skip this window completely.
+        # Note: we do NOT require both to be valid, only "at least one".
         if not emg_valid and not acc_valid:
             return None
 
-        # --- EMG feature: RMS over "value" (0..1000) normalized to 0..1 ---
+        # ------------- EMG FEATURES (independent from ACC) -------------
         if emg_valid:
-            # Compute RMS of EMG value
+            # Compute RMS of EMG value (0..1000), then normalize to ~0..1.
             sq_sum = 0.0
             for s in emg_window:
                 v = float(s.value)
                 sq_sum += v * v
-            mean_sq = sq_sum / emg_count
+            mean_sq = sq_sum / float(emg_count)
             emg_rms = mean_sq ** 0.5
-            # Normalize to [0,1] using 1000 as nominal max
+
+            # Use 1000 as a nominal "full scale" for normalization.
             emg_level = emg_rms / 1000.0
-            #print (f"EMG RMS: {emg_rms:.1f} → level {emg_level:.3f}")
         else:
-            # print("EMG data not valid")
+            # No valid EMG samples in this window.
             emg_level = 0.0
 
-        # --- ACC features: mean(|mag|) and variance of mag ---
+        # ------------- ACC FEATURES (independent from EMG) -------------
         if acc_valid:
+            # Use |mag| as simple motion magnitude.
             mags = [float(abs(s.mag)) for s in acc_window]
-            # Mean(|mag|)
-            move_level = sum(mags) / acc_count
 
-            # Variance of mag (population variance)
+            # Mean(|mag|)
+            move_level = sum(mags) / float(acc_count)
+
+            # Population variance of mag
             if acc_count > 1:
-                mean_mag = sum(mags) / acc_count
+                mean_mag = move_level
                 var_sum = 0.0
                 for m in mags:
                     d = m - mean_mag
                     var_sum += d * d
-                move_var = var_sum / acc_count
+                move_var = var_sum / float(acc_count)
             else:
                 move_var = 0.0
         else:
+            # No valid ACC samples in this window.
             move_level = 0.0
             move_var = 0.0
-       # print(f"ACC move_level: {move_level:.3f}, move_var: {move_var:.3f}")
 
+        # ------------- SEQUENCE + OUTPUT -------------
         self._seq += 1
 
         return fusion_pb2.FusedSample(
@@ -203,3 +220,4 @@ class FusionManager:
             acc_valid=acc_valid,
             acc_count=acc_count,
         )
+
