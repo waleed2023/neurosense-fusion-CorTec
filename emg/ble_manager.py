@@ -36,6 +36,7 @@ class BLEManager:
             if self._client and self._client.is_connected:
                 await self._client.disconnect()
         except Exception:
+            sys.stderr.write(f"{LOG_PREFIX} BLEManager stop error\n")
             pass
 
     async def _resolve_mac(self, timeout: float = 3.0) -> Optional[str]:
@@ -112,6 +113,7 @@ class BLEManager:
                             self._battery = int(b[0])
                         sys.stdout.write(f"{LOG_PREFIX} Battery {self._battery}%\n")
                     except Exception:
+                        sys.stderr.write(f"{LOG_PREFIX} Battery read error\n")
                         pass
 
                     await client.start_notify(ANALOG_CHAR, self._on_emg)
@@ -128,6 +130,7 @@ class BLEManager:
                     try:
                         await client.stop_notify(ANALOG_CHAR)
                     except Exception:
+                        sys.stderr.write(f"{LOG_PREFIX} EMG Notify stop error\n")
                         pass
 
             except asyncio.CancelledError:

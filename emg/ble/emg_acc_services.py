@@ -3,19 +3,9 @@ from typing import Optional, Callable, Awaitable
 from emg.broadcaster import Broadcaster
 from emg.proto import emg_pb2, fusion_pb2
 from .gatt_core import GattService, NotifyChar, WriteChar, RpcStream
+from .config import EMG_SVC, EMG_PARAM, EMG_RET, ACC_SVC, ACC_PARAM, ACC_RET, FUSION_SVC, FUSION_PARAM, FUSION_RET
 
-# UUIDs
-EMG_SVC   = "f8c94a20-9f1f-4f5a-8ad1-3d1b7c0a1000"
-EMG_PARAM = "f8c94a20-9f1f-4f5a-8ad1-3d1b7c0a1001"  # Write (SubscribeRequest)
-EMG_RET   = "f8c94a20-9f1f-4f5a-8ad1-3d1b7c0a1002"  # Notify (EmgSample)
 
-ACC_SVC   = "f8c94a20-9f1f-4f5a-8ad1-3d1b7c0a2000"
-ACC_PARAM = "f8c94a20-9f1f-4f5a-8ad1-3d1b7c0a2001"  # Write (AccelSubscribeRequest)
-ACC_RET   = "f8c94a20-9f1f-4f5a-8ad1-3d1b7c0a2002"  # Notify (AccelSample)
-
-FUSION_SVC   = "f8c94a20-9f1f-4f5a-8ad1-3d1b7c0a3000" 
-FUSION_PARAM = "f8c94a20-9f1f-4f5a-8ad1-3d1b7c0a3001"  # Write (FusionSubscribeRequest)
-FUSION_RET   = "f8c94a20-9f1f-4f5a-8ad1-3d1b7c0a3002"  # Notify (FusedSample)
 
 # --------- Streaming-Loops (lesen vom Broadcaster, senden via Notify) ---------
 
@@ -42,6 +32,7 @@ async def _emg_stream_loop(
                 last = now
                 await send_bytes(sample.SerializeToString())
     except asyncio.CancelledError:
+        sys.stdout.write(f"{LOG_PREFIX} EMG-Streaming stopped\n")
         raise
     finally:
         await broadcaster.unsubscribe(q)
@@ -69,6 +60,7 @@ async def _acc_stream_loop(
                 last = now
                 await send_bytes(sample.SerializeToString())
     except asyncio.CancelledError:
+        sys.stdout.write(f"{LOG_PREFIX} Accel-Streaming stopped\n")
         raise
     finally:
         await broadcaster.unsubscribe(q)

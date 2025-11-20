@@ -11,22 +11,14 @@ from .config import (
 )
 from .proto import emg_pb2
 
-# LSM6DSx Register
-REG_FUNC_CFG_ACCESS = 0x01
-REG_WHO_AM_I        = 0x0F
-REG_CTRL1_XL        = 0x10
-REG_CTRL2_G         = 0x11
-REG_CTRL3_C         = 0x12
-OUTX_L_XL           = 0x28
 
-WHOAMI_EXPECTED = {0x6A, 0x6B, 0x69} # possible values for LSM6DS3, LSM6DS4, LSM6DSO
-
+# LSM6DSx Register Map
 def to_s16(lo, hi):
     v = (hi << 8) | lo
     return v - 65536 if v > 32767 else v
 
 def scale_factor_g(fs_g: int) -> float:
-    # ±2g: 0.061 mg/LSB; ±4g: 0.122; ±8g: 0.244; ±16g: 0.488
+    """Return scale factor to convert raw accel value to g based on full-scale setting."""
     if fs_g == 2:
         return 0.000061
     if fs_g == 4:
@@ -85,6 +77,9 @@ class AccelManager:
             sys.stderr.write(f"{LOG_PREFIX} Warning: WHO_AM_I=0x{who:02X}\n")
 
     def _read_accel_g(self, bus: SMBus, addr: int):
+        """Read accel data, return AX, AY, AZ in g and magnitude MAG."""
+
+        
         a = bus.read_i2c_block_data(addr, OUTX_L_XL, 6)
         ax = to_s16(a[0], a[1])
         ay = to_s16(a[2], a[3])

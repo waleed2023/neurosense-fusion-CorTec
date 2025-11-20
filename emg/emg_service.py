@@ -46,6 +46,7 @@ class EmgService(emg_pb2_grpc.EmgServicer):
                         nxt = await asyncio.wait_for(q.get(), timeout=remaining)
                         batch.append(nxt)
                     except asyncio.TimeoutError:
+                        sys.stdout.write(f"{LOG_PREFIX} EmgService.StreamEmgPackets timeout\n")
                         break
 
                 # 3) Optional f by packets per second
@@ -68,4 +69,5 @@ class EmgService(emg_pb2_grpc.EmgServicer):
             sys.stderr.write(f"{LOG_PREFIX} EmgService.StreamEmgPackets cancelled\n")
             raise
         finally:
+            system.stdout.write(f"{LOG_PREFIX} EmgService.StreamEmgPackets stopped\n")
             await self.broadcaster.unsubscribe(q)

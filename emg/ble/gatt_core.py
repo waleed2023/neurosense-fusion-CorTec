@@ -1,4 +1,20 @@
 #!/usr/bin/env python3
+from __future__ import annotations
+
+import asyncio
+from typing import Any, Awaitable, Callable, Dict, Iterable, List, Optional
+
+from dbus_next.aio import MessageBus
+from dbus_next import Variant
+from dbus_next.constants import PropertyAccess
+from dbus_next.service import ServiceInterface, method, dbus_property
+from .config import (
+    BLUEZ, DBUS_PROP_IFACE, OBJM_IFACE, ADAPTER_IFACE, GATT_MGR_IFACE,
+    GATT_SERVICE_IFACE, GATT_CHAR_IFACE, LE_ADV_IFACE, LE_ADV_MANAGER_IFACE,
+    DEVICE_IFACE, DEFAULT_APP_PATH, DEFAULT_ADV_PATH, DEFAULT_ADAPTER
+)
+
+
 """
 BlueZ GATT core (dbus-next) — compact and production‑ready.
 
@@ -25,33 +41,9 @@ Notes:
   • All @method annotations use D‑Bus signature strings ("" for void) per dbus-next.
 """
 
-from __future__ import annotations
 
-import asyncio
-from typing import Any, Awaitable, Callable, Dict, Iterable, List, Optional
 
-from dbus_next.aio import MessageBus
-from dbus_next import Variant
-from dbus_next.constants import PropertyAccess
-from dbus_next.service import ServiceInterface, method, dbus_property
-
-# ---- BlueZ interfaces / constants ----
-BLUEZ = "org.bluez"
-DBUS_PROP_IFACE = "org.freedesktop.DBus.Properties"
-OBJM_IFACE = "org.freedesktop.DBus.ObjectManager"
-ADAPTER_IFACE = "org.bluez.Adapter1"
-GATT_MGR_IFACE = "org.bluez.GattManager1"
-GATT_SERVICE_IFACE = "org.bluez.GattService1"
-GATT_CHAR_IFACE = "org.bluez.GattCharacteristic1"
-LE_ADV_IFACE = "org.bluez.LEAdvertisement1"
-LE_ADV_MANAGER_IFACE = "org.bluez.LEAdvertisingManager1"
-DEVICE_IFACE = "org.bluez.Device1"
-
-DEFAULT_APP_PATH = "/org/bluez/protoble"
-DEFAULT_ADV_PATH = f"{DEFAULT_APP_PATH}/advertisement0"
-DEFAULT_ADAPTER = "/org/bluez/hci0"
-
-# ---------------------------------------------------------------------------
+# --------------------------------------------------------------------------
 #  Minimal LE Advertisement (LEAdvertisement1)
 # ---------------------------------------------------------------------------
 class BleAdvertisement(ServiceInterface):
@@ -408,6 +400,7 @@ class BleGattApp:
                 except Exception:
                     pass
             self._exported_paths.clear()
+            sys.stdout.write(f"{LOG_PREFIX} GATT app stopped\n")
 
     # Hook to wire into EMG Notify characteristic
     def get_stop_adv_hook(self) -> Callable[[], None]:
