@@ -5,6 +5,7 @@ from typing import Optional, List
 
 from emg.broadcaster import Broadcaster
 from emg.proto import emg_pb2, fusion_pb2
+from emg.config import LOG_PREFIX
 
 
 def now_ms() -> int:
