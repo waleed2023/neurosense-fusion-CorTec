@@ -3,6 +3,7 @@ import time
 import asyncio
 import grpc
 
+from .config import MAX_SAMPLES_PER_PACKET_FUSION, MAX_WAIT_S_FUSION
 from .proto import fusion_pb2, fusion_pb2_grpc
 
     async def StreamFusionPackets(
@@ -22,16 +23,13 @@ from .proto import fusion_pb2, fusion_pb2_grpc
             loop = asyncio.get_running_loop()
             last_send = 0.0
 
-            MAX_SAMPLES_PER_PACKET = 32 # max samples per packet
-            MAX_WAIT_S = 0.05
-
             while True:
                 first: fusion_pb2.FusedSample = await q.get()
                 batch = [first]
                 start = loop.time()
 
-                while len(batch) < MAX_SAMPLES_PER_PACKET:
-                    remaining = MAX_WAIT_S - (loop.time() - start)
+                while len(batch) < MAX_SAMPLES_PER_PACKET_FUSION:
+                    remaining = MAX_WAIT_S_FUSION - (loop.time() - start)
                     if remaining <= 0:
                         break
                     try:

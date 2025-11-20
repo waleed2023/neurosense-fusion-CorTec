@@ -6,8 +6,6 @@ BATTERY_CHAR = os.getenv("BATTERY_CHAR", "00002a19-0000-1000-8000-00805f9b34fb")
 TARGET_MAC = os.getenv("EMG_TARGET_MAC", "")
 TARGET_NAME = os.getenv("EMG_TARGET_NAME", "ANR Corp M40")
 
-# Clamp
-VALUE_MAX = int(os.getenv("VALUE_MAX", "1000")) # max value for EMG channels
 
 # gRPC
 GRPC_HOST = os.getenv("GRPC_HOST", "0.0.0.0")
@@ -26,3 +24,11 @@ ACCEL_ODR_HZ = float(os.getenv("ACCEL_ODR_HZ", "833"))  # Poll-Rate, options: 12
 ACCEL_FS_G = int(os.getenv("ACCEL_FS_G", "2")) # scale ±2g, ±4g, ±8g, ±16g, depending on case
 LOG_PREFIX = os.getenv("LOG_PREFIX", "[emg]") # Prefix for log messages
 
+
+# ===== Streaming / Packet Sizes =====
+MAX_SAMPLES_PER_PACKET_EMG = int(os.getenv("MAX_SAMPLES_PER_PACKET", "64"))  # max samples per packet in streaming services
+MAX_WAIT_S_EMG = float(os.getenv("MAX_WAIT_S", "0.02"))  # max wait time to gather more samples into one packet
+MAX_SAMPLES_PER_PACKET_ACCEL = int(os.getenv("MAX_SAMPLES_PER_PACKET_ACCEL", "128"))
+MAX_WAIT_S_ACCEL = float(os.getenv("MAX_WAIT_S_ACCEL", "0.02"))
+MAX_SAMPLES_PER_PACKET_FUSION = int(os.getenv("MAX_SAMPLES_PER_PACKET_FUSION", "32"))
+MAX_WAIT_S_FUSION = float(os.getenv("MAX_WAIT_S_FUSION", "0.05"))

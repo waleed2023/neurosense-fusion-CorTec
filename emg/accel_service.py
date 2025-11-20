@@ -2,6 +2,7 @@ import time
 import asyncio
 import grpc
 
+from .config import MAX_SAMPLES_PER_PACKET_ACCEL, MAX_WAIT_S_ACCEL
 from .proto import emg_pb2, emg_pb2_grpc
 
     async def StreamAccelPackets(
@@ -22,16 +23,13 @@ from .proto import emg_pb2, emg_pb2_grpc
             loop = asyncio.get_running_loop()
             last_send = 0.0
 
-            MAX_SAMPLES_PER_PACKET = 128 # max samples per packet
-            MAX_WAIT_S = 0.02
-
             while True:
                 first: emg_pb2.AccelSample = await q.get()
                 batch = [first]
                 start = loop.time()
 
-                while len(batch) < MAX_SAMPLES_PER_PACKET:
-                    remaining = MAX_WAIT_S - (loop.time() - start)
+                while len(batch) < MAX_SAMPLES_PER_PACKET_ACCEL:
+                    remaining = MAX_WAIT_S_ACCEL - (loop.time() - start)
                     if remaining <= 0:
                         break
                     try:

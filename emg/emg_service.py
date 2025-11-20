@@ -1,7 +1,7 @@
 import time
 import asyncio
 import grpc
-
+from .config import MAX_SAMPLES_PER_PACKET_EMG, MAX_WAIT_S_EMG, LOG_PREFIX
 from .proto import emg_pb2, emg_pb2_grpc
 
 class EmgService(emg_pb2_grpc.EmgServicer):
@@ -31,9 +31,6 @@ class EmgService(emg_pb2_grpc.EmgServicer):
             loop = asyncio.get_running_loop()
             last_send = 0.0
 
-            MAX_SAMPLES_PER_PACKET = 64   # max samples per packet
-            MAX_WAIT_S = 0.02             # max extra delay to gather more samples
-
             while True:
                 # 1) Wait for at least one sample (blocking)
                 first: emg_pb2.EmgSample = await q.get()
@@ -41,8 +38,8 @@ class EmgService(emg_pb2_grpc.EmgServicer):
                 start = loop.time()
 
                 # 2) Drain queue: merge all samples that arrive shortly after
-                while len(batch) < MAX_SAMPLES_PER_PACKET:
-                    remaining = MAX_WAIT_S - (loop.time() - start)
+                while len(batch) < MAX_SAMPLES_PER_PACKET_EMG:
+                    remaining = MAX_WAIT_S_EMG - (loop.time() - start)
                     if remaining <= 0:
                         break
                     try:

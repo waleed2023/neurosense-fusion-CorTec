@@ -55,7 +55,7 @@ async def _acc_stream_loop(
     try:
         req.ParseFromString(req_bytes)
     except Exception:
-        req.max_rate_hz = 200
+        req.max_rate_hz = 800
     interval_s = 1.0 / max(1, req.max_rate_hz)
     last = 0.0
     loop = asyncio.get_running_loop()
@@ -89,7 +89,7 @@ async def _fusion_stream_loop(
         req.ParseFromString(req_bytes)
     except Exception:
         # Fallback: default rate if client sends garbage or nothing
-        req.max_rate_hz = 10
+        req.max_rate_hz = 500
 
     max_rate = max(1, req.max_rate_hz)
     interval_s = 1.0 / float(max_rate)
