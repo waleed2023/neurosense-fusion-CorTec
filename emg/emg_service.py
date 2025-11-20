@@ -1,6 +1,7 @@
 import time
 import asyncio
 import grpc
+import sys
 from .config import MAX_SAMPLES_PER_PACKET_EMG, MAX_WAIT_S_EMG, LOG_PREFIX
 from .proto import emg_pb2, emg_pb2_grpc
 

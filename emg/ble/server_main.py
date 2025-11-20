@@ -1,7 +1,6 @@
 #!/usr/bin/env python3
 import asyncio
 import signal
-
 from emg.broadcaster import Broadcaster
 from emg.ble_manager import BLEManager
 from emg.accel_manager import AccelManager

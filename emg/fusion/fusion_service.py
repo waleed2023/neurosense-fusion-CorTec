@@ -2,6 +2,7 @@
 import time
 import asyncio
 import grpc
+import sys
 
 from .config import MAX_SAMPLES_PER_PACKET_FUSION, MAX_WAIT_S_FUSION
 from .proto import fusion_pb2, fusion_pb2_grpc

@@ -1,4 +1,5 @@
 import asyncio
+import sys
 from typing import Optional, Callable, Awaitable
 from emg.broadcaster import Broadcaster
 from emg.proto import emg_pb2, fusion_pb2

@@ -1,6 +1,7 @@
 # emg/fusion/fusion_manager.py
 import asyncio
 import time
+import sys
 from typing import Optional, List
 
 from emg.broadcaster import Broadcaster
