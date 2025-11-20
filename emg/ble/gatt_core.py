@@ -8,7 +8,9 @@ from dbus_next.aio import MessageBus
 from dbus_next import Variant
 from dbus_next.constants import PropertyAccess
 from dbus_next.service import ServiceInterface, method, dbus_property
-from .config import (
+import sys
+
+from emg.config import (
     BLUEZ,
     DBUS_PROP_IFACE,
     OBJM_IFACE,
@@ -22,6 +24,7 @@ from .config import (
     DEFAULT_APP_PATH,
     DEFAULT_ADV_PATH,
     DEFAULT_ADAPTER,
+    LOG_PREFIX,
 )
 
 
