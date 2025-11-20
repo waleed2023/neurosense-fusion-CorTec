@@ -3,7 +3,7 @@ from typing import Optional, Callable, Awaitable
 from emg.broadcaster import Broadcaster
 from emg.proto import emg_pb2, fusion_pb2
 from .gatt_core import GattService, NotifyChar, WriteChar, RpcStream
-from .config import EMG_SVC, EMG_PARAM, EMG_RET, ACC_SVC, ACC_PARAM, ACC_RET, FUSION_SVC, FUSION_PARAM, FUSION_RET
+from emg.config import EMG_SVC, EMG_PARAM, EMG_RET, ACC_SVC, ACC_PARAM, ACC_RET, FUSION_SVC, FUSION_PARAM, FUSION_RET
 
 
 
