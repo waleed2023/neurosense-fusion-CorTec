@@ -6,7 +6,7 @@ from typing import Optional, List
 
 from emg.broadcaster import Broadcaster
 from emg.proto import emg_pb2, fusion_pb2
-
+from emg.config import LOG_PREFIX
 
 def now_ms() -> int:
     # Common wall-clock in ms, same as used in EMG/Accel managers.
@@ -57,7 +57,7 @@ class FusionManager:
             try:
                 await self._task
             except asyncio.CancelledError:
-                sys.stdout.write(f"{LOG_PREFIX} FusionManager stopped\n")
+                #sys.stdout.write(f"{LOG_PREFIX} FusionManager stopped\n")
                 pass
             self._task = None
     # debug properties, removed later
@@ -91,6 +91,7 @@ class FusionManager:
                         self._debug_emg_read += 1 # count how EMG samples are consumed
                         emg_buf.append(s)
                 except asyncio.QueueEmpty:
+                    sys.stdout.write(f"{LOG_PREFIX} EMG queue empty\n")
                     pass
 
                 # 2) Drain new ACC samples into buffer
@@ -100,7 +101,7 @@ class FusionManager:
                         self._debug_acc_read += 1 # count how ACC samples are consumed
                         acc_buf.append(s)
                 except asyncio.QueueEmpty:
-                    #sys.stdout.write(f"{LOG_PREFIX} ACC queue empty\n")
+                    sys.stdout.write(f"{LOG_PREFIX} ACC queue empty\n")
                     pass
 
                 now = now_ms()
