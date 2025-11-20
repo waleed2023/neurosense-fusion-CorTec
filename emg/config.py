@@ -38,4 +38,4 @@ MAX_WAIT_S_FUSION = float(os.getenv("MAX_WAIT_S_FUSION", "0.05"))
 
 # ===== Fusion =====
 WINDOW_MS = int(os.getenv("FUSION_WINDOW_MS", "550"))  # time window for fusion in ms
-STEP_MS = int(os.getenv("FUSION_STEP_MS", "200"))      # step size for fusion in ms
+STEP_MS = int(os.getenv("FUSION_STEP_MS", "100"))      # step size for fusion in ms
