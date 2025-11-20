@@ -7,7 +7,8 @@ from typing import Optional
 from smbus2 import SMBus
 
 from .config import (
-    I2C_BUS, I2C_ADDR, ACCEL_ODR_HZ, ACCEL_FS_G, LOG_PREFIX,
+    I2C_BUS, I2C_ADDR, ACCEL_ODR_HZ, ACCEL_FS_G, LOG_PREFIX, WHOAMI_EXPECTED,
+    REG_CTRL1_XL, REG_CTRL2_G, REG_CTRL3_C, REG_WHO_AM_I, OUTX_L_XL,
 )
 from .proto import emg_pb2
 
@@ -79,7 +80,7 @@ class AccelManager:
     def _read_accel_g(self, bus: SMBus, addr: int):
         """Read accel data, return AX, AY, AZ in g and magnitude MAG."""
 
-        
+
         a = bus.read_i2c_block_data(addr, OUTX_L_XL, 6)
         ax = to_s16(a[0], a[1])
         ay = to_s16(a[2], a[3])
