@@ -36,7 +36,6 @@ from .proto import fusion_pb2, fusion_pb2_grpc
                         nxt = await asyncio.wait_for(q.get(), timeout=remaining)
                         batch.append(nxt)
                     except asyncio.TimeoutError:
-                        sys.stdout.write(f"{LOG_PREFIX} FusionService.StreamFusionPackets timeout\n")
                         break
 
                 if interval > 0.0:
@@ -53,8 +52,6 @@ from .proto import fusion_pb2, fusion_pb2_grpc
 
                 yield packet
         except asyncio.CancelledError:
-            sys.stderr.write(f"{LOG_PREFIX} FusionService.StreamFusionPackets cancelled\n")
             raise
         finally:
             await self.broadcaster.unsubscribe(q)
-            sys.stdout.write(f"{LOG_PREFIX} FusionService.StreamFusionPackets stopped\n")
