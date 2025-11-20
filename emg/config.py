@@ -6,6 +6,9 @@ BATTERY_CHAR = os.getenv("BATTERY_CHAR", "00002a19-0000-1000-8000-00805f9b34fb")
 TARGET_MAC = os.getenv("EMG_TARGET_MAC", "")
 TARGET_NAME = os.getenv("EMG_TARGET_NAME", "ANR Corp M40")
 
+# clamp VALUE_MAX to reasonable range
+VALUE_MAX = int(os.getenv("VALUE_MAX", "1000")) # max value for EMG channels
+
 
 # gRPC
 GRPC_HOST = os.getenv("GRPC_HOST", "0.0.0.0")
