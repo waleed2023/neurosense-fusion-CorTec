@@ -8,11 +8,10 @@ from dbus_next.aio import MessageBus
 from dbus_next import Variant
 from dbus_next.constants import PropertyAccess
 from dbus_next.service import ServiceInterface, method, dbus_property
-from .config import (
-    BLUEZ, DBUS_PROP_IFACE, OBJM_IFACE, ADAPTER_IFACE, GATT_MGR_IFACE,
+from .config import BLUEZ, DBUS_PROP_IFACE, OBJM_IFACE, ADAPTER_IFACE, GATT_MGR_IFACE,
     GATT_SERVICE_IFACE, GATT_CHAR_IFACE, LE_ADV_IFACE, LE_ADV_MANAGER_IFACE,
     DEVICE_IFACE, DEFAULT_APP_PATH, DEFAULT_ADV_PATH, DEFAULT_ADAPTER
-)
+
 
 
 """
