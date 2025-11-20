@@ -89,7 +89,7 @@ async def _fusion_stream_loop(
         req.ParseFromString(req_bytes)
     except Exception:
         # Fallback: default rate if client sends garbage or nothing
-        req.max_rate_hz = 500
+        req.max_rate_hz = 100
 
     max_rate = max(1, req.max_rate_hz)
     interval_s = 1.0 / float(max_rate)

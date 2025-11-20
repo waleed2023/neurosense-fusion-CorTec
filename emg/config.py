@@ -35,3 +35,7 @@ MAX_SAMPLES_PER_PACKET_ACCEL = int(os.getenv("MAX_SAMPLES_PER_PACKET_ACCEL", "12
 MAX_WAIT_S_ACCEL = float(os.getenv("MAX_WAIT_S_ACCEL", "0.02"))
 MAX_SAMPLES_PER_PACKET_FUSION = int(os.getenv("MAX_SAMPLES_PER_PACKET_FUSION", "32"))
 MAX_WAIT_S_FUSION = float(os.getenv("MAX_WAIT_S_FUSION", "0.05"))
+
+# ===== Fusion =====
+WINDOW_MS = int(os.getenv("FUSION_WINDOW_MS", "550"))  # time window for fusion in ms
+STEP_MS = int(os.getenv("FUSION_STEP_MS", "200"))      # step size for fusion in ms
