@@ -8,7 +8,7 @@ from typing import Optional, List
 
 from emg.broadcaster import Broadcaster
 from emg.proto import emg_pb2, fusion_pb2
-from emg.config import LOG_PREFIX, MAX_DELAY_MS, STEP_MS, WINDOW_MS
+from emg.config import LOG_PREFIX, WINDOW_MS, STEP_MS, MAX_DELAY_MS
 
 def now_ms() -> int:
     # Common wall-clock in ms, same as used in EMG/Accel managers.
@@ -89,11 +89,6 @@ class OnlineMagWindow:
 
 
 class FusionManager:
-    """
-    Collects EMG and accelerometer samples from their broadcasters,
-    aggregates them in fixed time windows, computes simple features,
-    and publishes FusedSample objects into fusion_broadcaster.
-    """
     def __init__(
         self,
         emg_broadcaster: Broadcaster,
@@ -113,19 +108,23 @@ class FusionManager:
         self._window_ms = window_ms
         self._max_delay_ms = max_delay_ms
         self._step_ms = step_ms
-        self._min_emg = min_emg_samples
-        self._min_acc = min_acc_samples
+
+        # konsistente Namen für die Mindest-Samples
+        self._min_emg_samples = min_emg_samples
+        self._min_acc_samples = min_acc_samples
 
         self._task: Optional[asyncio.Task] = None
         self._seq: int = 0
 
-        # Debug counters for test code (removed later)
+        # Debug counters
         self._debug_emg_read: int = 0
         self._debug_acc_read: int = 0
 
-        # Online windows for features
+        # Online-Fenster für Features
         self._emg_rms_win = OnlineRMSWindow(window_ms)
         self._acc_mag_win = OnlineMagWindow(window_ms)
+
+
 
     def start(self) -> None:
         if self._task is None:
@@ -264,11 +263,9 @@ class FusionManager:
         emg_rms, emg_count = self._emg_rms_win.get_rms()
         move_level, move_var, acc_count = self._acc_mag_win.get_stats()
 
-        min_emg = self._min_emg_samples
-        min_acc = self._min_acc_samples
+        emg_valid = emg_count >= self._min_emg_samples
+        acc_valid = acc_count >= self._min_acc_samples
 
-        emg_valid = emg_count >= min_emg
-        acc_valid = acc_count >= min_acc
 
         # Fusion depends on both streams being valid
         if not emg_valid or not acc_valid:
