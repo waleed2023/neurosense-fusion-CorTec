@@ -2,12 +2,11 @@
 import asyncio
 import time
 import sys
-from .config import WINDOW_MS, STEP_MS, LOG_PREFIX
 from typing import Optional, List
 
 from emg.broadcaster import Broadcaster
 from emg.proto import emg_pb2, fusion_pb2
-from emg.config import LOG_PREFIX
+from emg.config import LOG_PREFIX, MAX_DELAY_MS, STEP_MS, WINDOW_MS
 
 def now_ms() -> int:
     # Common wall-clock in ms, same as used in EMG/Accel managers.
