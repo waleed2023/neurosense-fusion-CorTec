@@ -125,6 +125,13 @@ class FusionManager:
         self._acc_mag_win = OnlineMagWindow(window_ms)
 
 
+        # --- Sample & hold state ---
+        self._last_emg_level: float = 0.0
+        self._has_emg_level: bool = False
+
+        self._last_move_level: float = 0.0
+        self._last_move_var: float = 0.0
+        self._has_acc_level: bool = False
 
     def start(self) -> None:
         if self._task is None:
@@ -243,50 +250,63 @@ class FusionManager:
         """
         Compute window-based features for EMG and ACC using the online windows.
 
-        - EMG:
-            * emg_level: RMS of EMG 'value' (0..1000), normalized to ~0..1
-            * emg_valid: True if at least min_emg_samples in this window
-            * emg_count: number of EMG samples in RMS window
-
-        - ACC:
-            * move_level: mean(|mag|)
-            * move_var: variance of |mag| (population variance)
-            * acc_valid: True if at least min_acc_samples in this window
-            * acc_count: number of ACC samples in MAG window
-
-        IMPORTANT:
-        - EMG and ACC pipelines are independent.
-        - Fusion layer only emits if *both* streams are valid.
+        Sample & hold:
+        - If there are not enough *new* samples for this window, reuse the last
+          valid level instead of sending 0 (for EMG and ACC separately).
         """
 
         # --- Get stats from online windows ---
         emg_rms, emg_count = self._emg_rms_win.get_rms()
         move_level, move_var, acc_count = self._acc_mag_win.get_stats()
 
-        emg_valid = emg_count >= self._min_emg_samples
-        acc_valid = acc_count >= self._min_acc_samples
+        min_emg = self._min_emg_samples
+        min_acc = self._min_acc_samples
 
+        # Are there enough *fresh* samples in this window?
+        emg_has_new = emg_count >= min_emg
+        acc_has_new = acc_count >= min_acc
 
-        # Fusion depends on both streams being valid
+        # ------------- EMG: sample & hold -------------
+        if emg_has_new:
+            # New window has enough EMG samples -> compute new RMS level
+            emg_level = emg_rms / 1000.0  # normalize to ~0..1
+            self._last_emg_level = emg_level
+            self._has_emg_level = True
+            emg_valid = True
+        else:
+            # Not enough EMG in this window -> sample & hold or invalid
+            if self._has_emg_level:
+                emg_level = self._last_emg_level
+                emg_valid = True
+            else:
+                emg_level = 0.0
+                emg_valid = False
+
+        # ------------- ACC: sample & hold -------------
+        if acc_has_new:
+            # New ACC stats for this window
+            self._last_move_level = move_level
+            self._last_move_var = move_var
+            self._has_acc_level = True
+            acc_valid = True
+        else:
+            # Not enough ACC samples -> sample & hold or invalid
+            if self._has_acc_level:
+                move_level = self._last_move_level
+                move_var = self._last_move_var
+                acc_valid = True
+            else:
+                move_level = 0.0
+                move_var = 0.0
+                acc_valid = False
+
+        # ------------- Fusion gating -------------
+        # Here you decide: require both streams, or allow EMG-only, etc.
+        # Current behavior: only emit if both signals are valid (even with hold).
         if not emg_valid or not acc_valid:
             return None
 
-        # ------------- EMG FEATURES -------------
-        if emg_valid:
-            # Normalize RMS to ~0..1 assuming full scale ~1000
-            emg_level = emg_rms / 1000.0
-        else:
-            emg_level = 0.0
-
-        # ------------- ACC FEATURES -------------
-        if acc_valid:
-            # move_level: mean(|mag|), move_var: variance
-            pass  # values already in move_level / move_var
-        else:
-            move_level = 0.0
-            move_var = 0.0
-
-        # ------------- SEQUENCE + OUTPUT -------------
+        # ------------- Sequence + output -------------
         self._seq += 1
 
         return fusion_pb2.FusedSample(
@@ -300,4 +320,3 @@ class FusionManager:
             acc_valid=acc_valid,
             acc_count=acc_count,
         )
-
