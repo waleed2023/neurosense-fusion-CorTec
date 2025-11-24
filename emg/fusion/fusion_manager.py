@@ -10,6 +10,7 @@ from emg.broadcaster import Broadcaster
 from emg.proto import emg_pb2, fusion_pb2
 from emg.config import LOG_PREFIX, WINDOW_MS, STEP_MS, MAX_DELAY_MS
 
+
 def now_ms() -> int:
     # Common wall-clock in ms, same as used in EMG/Accel managers.
     return int(time.time() * 1000)
@@ -87,7 +88,6 @@ class OnlineMagWindow:
         return mean, var, n
 
 
-
 class FusionManager:
     def __init__(
         self,
@@ -96,10 +96,11 @@ class FusionManager:
         fusion_broadcaster: Broadcaster,
         *,
         window_ms: int = WINDOW_MS,
-        step_ms: int = STEP_MS,
+        step_ms: int = STEP_MS,          # bleibt für Kompatibilität, wird aktuell nicht benutzt
         max_delay_ms: int = MAX_DELAY_MS,
         min_emg_samples: int = 1,
         min_acc_samples: int = 1,
+        fusion_step_ms: int = 1,         # 1 ms = 1000 Hz Fusion-Clock
     ):
         self._emg_b = emg_broadcaster
         self._acc_b = acc_broadcaster
@@ -108,6 +109,7 @@ class FusionManager:
         self._window_ms = window_ms
         self._max_delay_ms = max_delay_ms
         self._step_ms = step_ms
+        self._fusion_step_ms = fusion_step_ms
 
         # konsistente Namen für die Mindest-Samples
         self._min_emg_samples = min_emg_samples
@@ -124,7 +126,6 @@ class FusionManager:
         self._emg_rms_win = OnlineRMSWindow(window_ms)
         self._acc_mag_win = OnlineMagWindow(window_ms)
 
-
         # --- Sample & hold state ---
         self._last_emg_level: float = 0.0
         self._has_emg_level: bool = False
@@ -132,7 +133,6 @@ class FusionManager:
         self._last_move_level: float = 0.0
         self._last_move_var: float = 0.0
         self._has_acc_level: bool = False
-
 
     def start(self) -> None:
         if self._task is None:
@@ -144,21 +144,20 @@ class FusionManager:
             try:
                 await self._task
             except asyncio.CancelledError:
-                #sys.stdout.write(f"{LOG_PREFIX} FusionManager stopped\n")
+                # sys.stdout.write(f"{LOG_PREFIX} FusionManager stopped\n")
                 pass
             self._task = None
-    # debug properties, removed later
+
+    # debug properties, removed später
     @property
     def debug_emg_read(self) -> int:
         """Number of EMG samples read from the EMG queue."""
         return self._debug_emg_read
 
-    # debug properties, removed later
     @property
     def debug_acc_read(self) -> int:
         """Number of ACC samples read from the ACC queue."""
         return self._debug_acc_read
-
 
     async def _run(self) -> None:
         emg_q = await self._emg_b.subscribe()
@@ -248,8 +247,6 @@ class FusionManager:
             await self._emg_b.unsubscribe(emg_q)
             await self._acc_b.unsubscribe(acc_q)
 
-
-
     def _compute_fused_sample(
         self,
         *,
@@ -309,8 +306,7 @@ class FusionManager:
                 acc_valid = False
 
         # ------------- Fusion gating -------------
-        # Here you decide: require both streams, or allow EMG-only, etc.
-        # Current behavior: only emit if both signals are valid (even with hold).
+        # Aktuell: nur senden, wenn beide Streams gültig sind (inkl. Hold).
         if not emg_valid or not acc_valid:
             return None
 
