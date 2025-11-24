@@ -47,13 +47,13 @@ MAX_WAIT_S_FUSION = float(os.getenv("MAX_WAIT_S_FUSION", "0.05"))
 
 # ===== Fusion =====
 WINDOW_MS = int(os.getenv("FUSION_WINDOW_MS", "550"))  # time window for fusion in ms
-STEP_MS = int(os.getenv("FUSION_STEP_MS", "10"))      # step size for fusion in ms
+STEP_MS = int(os.getenv("FUSION_STEP_MS", "2"))      # step size for fusion in ms
 MAX_DELAY_MS = int(os.getenv("FUSION_MAX_DELAY_MS", "120"))  # z.B. 120 ms max allowed delay between EMG and ACC samples
 
 # ===== max rates =====
 MAX_RATE_HZ_ACC = int(os.getenv("FUSION_MAX_RATE_HZ", "800"))
 MAX_RATE_HZ_EMG = int(os.getenv("FUSION_MAX_RATE_HZ_EMG", "10"))
-MAX_RATE_HZ_FUSION = int(os.getenv("FUSION_MAX_RATE_HZ_FUSION", "100"))
+MAX_RATE_HZ_FUSION = int(os.getenv("FUSION_MAX_RATE_HZ_FUSION", "500"))
 
 
 # UUIDs
