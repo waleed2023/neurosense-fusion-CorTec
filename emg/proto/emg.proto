@@ -12,7 +12,7 @@ message SubscribeRequest {
 
 message EmgSample {
   uint32 value = 1;   // 0..1000 (clamped)
-  uint64 ts_ms = 2;   // epoch ms
+  uint64 ts_ms = 2;
   uint32 battery = 3; // 0..100; 255 = unbekannt
 }
 
@@ -22,7 +22,6 @@ message EmgSamplePacket {
 }
 
 service Emg {
-  // gRPC-Service (falls genutzt). BLE verwendet nur die Messages.
   rpc StreamEmg(SubscribeRequest) returns (stream EmgSample);
 }
 

@@ -93,7 +93,7 @@ class BLEManager:
 
     
     async def run(self):
-        backoff = 1.0
+        backoff = 1.0 # for reconnect device
         while not self._stop.is_set():
             try:
                 mac = await self._resolve_mac()

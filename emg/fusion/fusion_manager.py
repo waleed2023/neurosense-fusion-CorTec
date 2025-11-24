@@ -2,6 +2,7 @@
 import asyncio
 import time
 import sys
+from .config import WINDOW_MS, STEP_MS, LOG_PREFIX
 from typing import Optional, List
 
 from emg.broadcaster import Broadcaster
@@ -25,8 +26,9 @@ class FusionManager:
         acc_broadcaster: Broadcaster,
         fusion_broadcaster: Broadcaster,
         *,
-        window_ms: int = 550,
-        step_ms: int = 200,
+        window_ms: int = WINDOW_MS,
+        step_ms: int = STEP_MS,
+        max_delay_ms: int = MAX_DELAY_MS,
         min_emg_samples: int = 1,
         min_acc_samples: int = 1,
     ):
@@ -35,6 +37,7 @@ class FusionManager:
         self._fusion_b = fusion_broadcaster
 
         self._window_ms = window_ms
+        self._max_delay_ms = max_delay_ms
         self._step_ms = step_ms
         self._min_emg = min_emg_samples
         self._min_acc = min_acc_samples
@@ -91,6 +94,7 @@ class FusionManager:
                         self._debug_emg_read += 1 # count how EMG samples are consumed
                         emg_buf.append(s)
                 except asyncio.QueueEmpty:
+                    # queue empty
                     pass
 
                 # 2) Drain new ACC samples into buffer
@@ -100,11 +104,21 @@ class FusionManager:
                         self._debug_acc_read += 1 # count how ACC samples are consumed
                         acc_buf.append(s)
                 except asyncio.QueueEmpty:
+                    # queue empty
                     pass
+                # Sort buffers by timestamp (in case samples arrived out-of-order)
+                # sort run in n*Log(n)
+                emg_buf.sort(key=lambda s: s.ts_ms)
+                acc_buf.sort(key=lambda s: s.ts_ms)
+
 
                 now = now_ms()
                 if (now - last_window_ts) >= self._step_ms:
-                    win_end = now
+                    effecive_window = now - self._max_delay_ms
+                    if effecive_window < 0:
+                        effecive_window = 0 # safety check, in case of time sync issues
+                    win_end = effecive_window
+                    #win_end = now
                     win_start = win_end - self._window_ms
 
                     # Select samples inside current window
@@ -180,16 +194,16 @@ class FusionManager:
         if emg_valid:
             # RMS of EMG values (0..1000)
             sq_sum = 0.0
-            for s in emg_window:
-                v = float(s.value)
+            for val in emg_window:
+                v = float(val.value)
                 sq_sum += v * v
-            mean_sq = sq_sum / float(emg_count)
+            mean_sq = sq_sum / float(emg_count) # sum of squares / N
             emg_rms = mean_sq**0.5
 
             # Normalize to ~0..1 assuming full scale ~1000
             emg_level = emg_rms / 1000.0
         else:
-            # Should not happen because of gate above, but keep for safety
+            # Should not happen because of gate above, but we keep it for safety
             emg_level = 0.0
 
         # ------------- ACC FEATURES (independent from EMG) -------------

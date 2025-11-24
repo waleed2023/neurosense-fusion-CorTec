@@ -8,6 +8,10 @@ from .config import MAX_SAMPLES_PER_PACKET_FUSION, MAX_WAIT_S_FUSION
 from .proto import fusion_pb2, fusion_pb2_grpc
 
     async def StreamFusionPackets(
+        """
+        Streams merged packets of FusedSample.
+        Each reply is a packet containing multiple fused samples.
+        """
         self,
         request: fusion_pb2.FusionSubscribeRequest,
         context: grpc.aio.ServicerContext,
