@@ -4,7 +4,7 @@ from typing import Optional, Callable, Awaitable
 from emg.broadcaster import Broadcaster
 from emg.proto import emg_pb2, fusion_pb2
 from .gatt_core import GattService, NotifyChar, WriteChar, RpcStream
-from emg.config import EMG_SVC, EMG_PARAM, EMG_RET, ACC_SVC, ACC_PARAM, ACC_RET, FUSION_SVC, FUSION_PARAM, FUSION_RET
+from emg.config import EMG_SVC, EMG_PARAM, EMG_RET, ACC_SVC, ACC_PARAM, ACC_RET, FUSION_SVC, FUSION_PARAM, FUSION_RET, MAX_RATE_HZ_ACC, MAX_RATE_HZ_EMG, MAX_RATE_HZ_FUSION, LOG_PREFIX
 
 
 
@@ -19,7 +19,7 @@ async def _emg_stream_loop(
     try:
         req.ParseFromString(req_bytes)
     except Exception:
-        req.max_rate_hz = 10 # fallback max rate
+        req.max_rate_hz = MAX_RATE_HZ_EMG # fallback max rate
     interval_s = 1.0 / max(1, req.max_rate_hz)
     last = 0.0
     loop = asyncio.get_running_loop()
@@ -47,7 +47,7 @@ async def _acc_stream_loop(
     try:
         req.ParseFromString(req_bytes)
     except Exception:
-        req.max_rate_hz = 800
+        req.max_rate_hz = MAX_RATE_HZ_ACC
     interval_s = 1.0 / max(1, req.max_rate_hz)
     last = 0.0
     loop = asyncio.get_running_loop()
@@ -82,7 +82,7 @@ async def _fusion_stream_loop(
         req.ParseFromString(req_bytes)
     except Exception:
         # Fallback: default rate if client sends garbage or nothing
-        req.max_rate_hz = 5
+        req.max_rate_hz = MAX_RATE_HZ_FUSION
 
     max_rate = max(1, req.max_rate_hz)
     interval_s = 1.0 / float(max_rate)
