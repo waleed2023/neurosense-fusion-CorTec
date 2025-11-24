@@ -133,6 +133,7 @@ class FusionManager:
         self._last_move_var: float = 0.0
         self._has_acc_level: bool = False
 
+
     def start(self) -> None:
         if self._task is None:
             self._task = asyncio.create_task(self._run(), name="fusion-manager")
@@ -163,83 +164,90 @@ class FusionManager:
         emg_q = await self._emg_b.subscribe()
         acc_q = await self._acc_b.subscribe()
 
-        # Reorder/late buffer: raw samples not yet "consumed" into the windows
+        # Reorder-Buffer (roh, noch nicht ins Online-Fenster geschoben)
         emg_buf: List[emg_pb2.EmgSample] = []
         acc_buf: List[emg_pb2.AccelSample] = []
 
-        last_window_ts = now_ms()
+        fusion_step_ms = self._fusion_step_ms
+        # Starte Fusion-Takt jetzt (auf ganze Millisekunde ausgerichtet)
+        next_fusion_ts = now_ms()
 
         try:
             while True:
-                # 1) Drain new EMG samples into buffer
+                # --- 1) Neue EMG-Samples aus Queue holen ---
                 try:
                     while True:
                         s = emg_q.get_nowait()
-                        self._debug_emg_read += 1  # count EMG samples consumed
+                        self._debug_emg_read += 1
                         emg_buf.append(s)
                 except asyncio.QueueEmpty:
                     pass
 
-                # 2) Drain new ACC samples into buffer
+                # --- 2) Neue ACC-Samples aus Queue holen ---
                 try:
                     while True:
                         s = acc_q.get_nowait()
-                        self._debug_acc_read += 1  # count ACC samples consumed
+                        self._debug_acc_read += 1
                         acc_buf.append(s)
                 except asyncio.QueueEmpty:
                     pass
 
-                # 3) Sort buffers by timestamp (out-of-order fix)
+                # --- 3) Reorder: nach Timestamp sortieren ---
                 emg_buf.sort(key=lambda s: s.ts_ms)
                 acc_buf.sort(key=lambda s: s.ts_ms)
 
                 now = now_ms()
-                if (now - last_window_ts) >= self._step_ms:
-                    # Evaluate window slightly in the past to tolerate delay
-                    effective_end = now - self._max_delay_ms
+
+                # Sicherheit: nicht unendlich "aufholen"
+                max_steps = 5000
+                steps = 0
+
+                # --- 4) Fusion-Clock aufholen: 1 ms Schritte ---
+                while next_fusion_ts <= now and steps < max_steps:
+                    # Fenster-Ende leicht in der Vergangenheit (Delay-Puffer)
+                    effective_end = next_fusion_ts - self._max_delay_ms
                     if effective_end < 0:
-                        effective_end = 0  # safety in case of time issues
+                        effective_end = 0
 
                     win_end = effective_end
                     win_start = win_end - self._window_ms
 
-                    # --- FEED ONLINE WINDOWS WITH "READY" SAMPLES (ts <= win_end) ---
+                    # ---- EMG: alle Samples mit ts <= win_end in das RMS-Fenster schieben ----
+                    if emg_buf:
+                        ready_emg = [s for s in emg_buf if s.ts_ms <= win_end]
+                        if ready_emg:
+                            emg_buf = [s for s in emg_buf if s.ts_ms > win_end]
+                            for s in ready_emg:
+                                self._emg_rms_win.add_sample(s.ts_ms, float(s.value))
 
-                    # EMG: move all samples with ts <= win_end from emg_buf into RMS window
-                    ready_emg: List[emg_pb2.EmgSample] = [
-                        s for s in emg_buf if s.ts_ms <= win_end
-                    ]
-                    emg_buf = [s for s in emg_buf if s.ts_ms > win_end]
+                    # ---- ACC: alle Samples mit ts <= win_end in das MAG-Fenster schieben ----
+                    if acc_buf:
+                        ready_acc = [s for s in acc_buf if s.ts_ms <= win_end]
+                        if ready_acc:
+                            acc_buf = [s for s in acc_buf if s.ts_ms > win_end]
+                            for s in ready_acc:
+                                mag_abs = float(abs(s.mag))
+                                self._acc_mag_win.add_sample(s.ts_ms, mag_abs)
 
-                    for s in ready_emg:
-                        self._emg_rms_win.add_sample(s.ts_ms, float(s.value))
-
-                    # ACC: same idea for magnitude stats
-                    ready_acc: List[emg_pb2.AccelSample] = [
-                        s for s in acc_buf if s.ts_ms <= win_end
-                    ]
-                    acc_buf = [s for s in acc_buf if s.ts_ms > win_end]
-
-                    for s in ready_acc:
-                        mag_abs = float(abs(s.mag))
-                        self._acc_mag_win.add_sample(s.ts_ms, mag_abs)
-
-                    # --- SLIDE WINDOW START FOR ONLINE STATS ---
+                    # ---- Fenster-Anfang nach vorne schieben (alte Samples raus) ----
                     self._emg_rms_win.drop_older_than(win_start)
                     self._acc_mag_win.drop_older_than(win_start)
 
-                    # --- COMPUTE FUSED SAMPLE FROM ONLINE WINDOWS ---
+                    # ---- FusedSample aus Online-Stats berechnen ----
                     fused = self._compute_fused_sample(ts_ms=win_end)
                     if fused is not None:
                         await self._fusion_b.publish(fused)
 
-                    last_window_ts = now
+                    # 1 ms weiter im Fusion-Clock
+                    next_fusion_ts += fusion_step_ms
+                    steps += 1
 
-                # Avoid busy-loop
-                await asyncio.sleep(0.01)
+                # Kleine Pause, damit die CPU nicht 100% läuft
+                await asyncio.sleep(0.0005)
         finally:
             await self._emg_b.unsubscribe(emg_q)
             await self._acc_b.unsubscribe(acc_q)
+
 
 
     def _compute_fused_sample(
