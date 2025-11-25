@@ -1,91 +1,18 @@
 # emg/fusion/fusion_manager.py
+
 import asyncio
 import time
-import sys
-import math
-from collections import deque
 from typing import Optional, List
 
+from emg.fusion.rms_mag import OnlineRMSWindow, OnlineMagWindow
 from emg.broadcaster import Broadcaster
 from emg.proto import emg_pb2, fusion_pb2
-from emg.config import LOG_PREFIX, WINDOW_MS, STEP_MS, MAX_DELAY_MS
+from emg.config import WINDOW_MS, STEP_MS, MAX_DELAY_MS
 
 
 def now_ms() -> int:
-    # Common wall-clock in ms, same as used in EMG/Accel managers.
+    """Common wall-clock in ms, same as used in EMG/Accel managers."""
     return int(time.time() * 1000)
-
-
-class OnlineRMSWindow:
-    """Online RMS over a sliding time window [ts_min, +inf)."""
-
-    def __init__(self, window_ms: int):
-        self.window_ms = window_ms
-        # deque of (ts_ms, value)
-        self.samples: deque[tuple[int, float]] = deque()
-        self.sum_sq: float = 0.0
-
-    def add_sample(self, ts_ms: int, value: float) -> None:
-        """Add new EMG sample to the window."""
-        self.samples.append((ts_ms, value))
-        self.sum_sq += value * value
-
-    def drop_older_than(self, ts_min: int) -> None:
-        """Drop all samples with timestamp < ts_min."""
-        while self.samples and self.samples[0][0] < ts_min:
-            _, v_old = self.samples.popleft()
-            self.sum_sq -= v_old * v_old
-
-    def get_rms(self) -> tuple[float, int]:
-        """Return (RMS, count) for current samples in window."""
-        n = len(self.samples)
-        if n == 0:
-            return 0.0, 0
-        mean_sq = self.sum_sq / float(n)
-        return math.sqrt(mean_sq), n
-
-
-class OnlineMagWindow:
-    """
-    Online stats for |mag| in a sliding time window [ts_min, +inf).
-
-    We keep:
-      - sum_mag     = Σ |mag|
-      - sum_mag_sq  = Σ |mag|^2
-    so that:
-      - mean = sum_mag / N
-      - var  = sum_mag_sq / N - mean^2
-    """
-
-    def __init__(self, window_ms: int):
-        self.window_ms = window_ms
-        # deque of (ts_ms, mag_abs)
-        self.samples: deque[tuple[int, float]] = deque()
-        self.sum_mag: float = 0.0
-        self.sum_mag_sq: float = 0.0
-
-    def add_sample(self, ts_ms: int, mag_abs: float) -> None:
-        self.samples.append((ts_ms, mag_abs))
-        self.sum_mag += mag_abs
-        self.sum_mag_sq += mag_abs * mag_abs
-
-    def drop_older_than(self, ts_min: int) -> None:
-        while self.samples and self.samples[0][0] < ts_min:
-            _, m_old = self.samples.popleft()
-            self.sum_mag -= m_old
-            self.sum_mag_sq -= m_old * m_old
-
-    def get_stats(self) -> tuple[float, float, int]:
-        """Return (mean, variance, count) of |mag| in the window."""
-        n = len(self.samples)
-        if n == 0:
-            return 0.0, 0.0, 0
-
-        mean = self.sum_mag / float(n)
-        var = self.sum_mag_sq / float(n) - mean * mean
-        if var < 0.0:
-            var = 0.0  # numerical safety
-        return mean, var, n
 
 
 class FusionManager:
@@ -96,11 +23,10 @@ class FusionManager:
         fusion_broadcaster: Broadcaster,
         *,
         window_ms: int = WINDOW_MS,
-        step_ms: int = STEP_MS,          # bleibt für Kompatibilität, wird aktuell nicht benutzt
+        step_ms: int = STEP_MS,          # Fusion-Clock step size
         max_delay_ms: int = MAX_DELAY_MS,
         min_emg_samples: int = 1,
         min_acc_samples: int = 1,
-        fusion_step_ms: int = 1,         # 1 ms = 1000 Hz Fusion-Clock
     ):
         self._emg_b = emg_broadcaster
         self._acc_b = acc_broadcaster
@@ -109,20 +35,19 @@ class FusionManager:
         self._window_ms = window_ms
         self._max_delay_ms = max_delay_ms
         self._step_ms = step_ms
-        self._fusion_step_ms = fusion_step_ms
 
-        # konsistente Namen für die Mindest-Samples
+        # Minimum number of samples per window
         self._min_emg_samples = min_emg_samples
         self._min_acc_samples = min_acc_samples
 
-        self._task: Optional[asyncio.Task] = None
+        self._task: Optional[asyncio.Task] = None # Fusion task
         self._seq: int = 0
 
         # Debug counters
         self._debug_emg_read: int = 0
         self._debug_acc_read: int = 0
 
-        # Online-Fenster für Features
+        # Online windows for features
         self._emg_rms_win = OnlineRMSWindow(window_ms)
         self._acc_mag_win = OnlineMagWindow(window_ms)
 
@@ -134,6 +59,10 @@ class FusionManager:
         self._last_move_var: float = 0.0
         self._has_acc_level: bool = False
 
+    # --------------------------------------------------------------------- #
+    # Lifecycle
+    # --------------------------------------------------------------------- #
+
     def start(self) -> None:
         if self._task is None:
             self._task = asyncio.create_task(self._run(), name="fusion-manager")
@@ -144,11 +73,13 @@ class FusionManager:
             try:
                 await self._task
             except asyncio.CancelledError:
-                # sys.stdout.write(f"{LOG_PREFIX} FusionManager stopped\n")
                 pass
             self._task = None
 
-    # debug properties, removed später
+    # --------------------------------------------------------------------- #
+    # Debug properties
+    # --------------------------------------------------------------------- #
+
     @property
     def debug_emg_read(self) -> int:
         """Number of EMG samples read from the EMG queue."""
@@ -159,21 +90,25 @@ class FusionManager:
         """Number of ACC samples read from the ACC queue."""
         return self._debug_acc_read
 
+    # --------------------------------------------------------------------- #
+    # Main loop
+    # --------------------------------------------------------------------- #
+
     async def _run(self) -> None:
         emg_q = await self._emg_b.subscribe()
         acc_q = await self._acc_b.subscribe()
 
-        # Reorder-Buffer (roh, noch nicht ins Online-Fenster geschoben)
+        # Reorder buffer (raw, not yet pushed into online window)
         emg_buf: List[emg_pb2.EmgSample] = []
         acc_buf: List[emg_pb2.AccelSample] = []
 
-        fusion_step_ms = self._fusion_step_ms
-        # Starte Fusion-Takt jetzt (auf ganze Millisekunde ausgerichtet)
+        fusion_step_ms = self._step_ms
+        # Start fusion tick now (aligned to whole millisecond)
         next_fusion_ts = now_ms()
 
         try:
             while True:
-                # --- 1) Neue EMG-Samples aus Queue holen ---
+                # --- 1) Fetch new EMG samples from queue ---
                 try:
                     while True:
                         s = emg_q.get_nowait()
@@ -182,7 +117,7 @@ class FusionManager:
                 except asyncio.QueueEmpty:
                     pass
 
-                # --- 2) Neue ACC-Samples aus Queue holen ---
+                # --- 2) Fetch new ACC samples from queue ---
                 try:
                     while True:
                         s = acc_q.get_nowait()
@@ -191,19 +126,19 @@ class FusionManager:
                 except asyncio.QueueEmpty:
                     pass
 
-                # --- 3) Reorder: nach Timestamp sortieren ---
+                # --- 3) Reorder: sort by timestamp ---
                 emg_buf.sort(key=lambda s: s.ts_ms)
                 acc_buf.sort(key=lambda s: s.ts_ms)
 
                 now = now_ms()
 
-                # Sicherheit: nicht unendlich "aufholen"
+                # Safety: prevent infinite catch-up, protect backlog
                 max_steps = 5000
                 steps = 0
 
-                # --- 4) Fusion-Clock aufholen: 1 ms Schritte ---
+                # --- 4) Catch up fusion clock: steps in step_ms ---
                 while next_fusion_ts <= now and steps < max_steps:
-                    # Fenster-Ende leicht in der Vergangenheit (Delay-Puffer)
+                    # Window end slightly in the past (delay buffer)
                     effective_end = next_fusion_ts - self._max_delay_ms
                     if effective_end < 0:
                         effective_end = 0
@@ -211,7 +146,7 @@ class FusionManager:
                     win_end = effective_end
                     win_start = win_end - self._window_ms
 
-                    # ---- EMG: alle Samples mit ts <= win_end in das RMS-Fenster schieben ----
+                    # ---- EMG: push all samples with ts <= win_end into RMS window ----
                     if emg_buf:
                         ready_emg = [s for s in emg_buf if s.ts_ms <= win_end]
                         if ready_emg:
@@ -219,7 +154,7 @@ class FusionManager:
                             for s in ready_emg:
                                 self._emg_rms_win.add_sample(s.ts_ms, float(s.value))
 
-                    # ---- ACC: alle Samples mit ts <= win_end in das MAG-Fenster schieben ----
+                    # ---- ACC: push all samples with ts <= win_end into MAG window ----
                     if acc_buf:
                         ready_acc = [s for s in acc_buf if s.ts_ms <= win_end]
                         if ready_acc:
@@ -228,24 +163,28 @@ class FusionManager:
                                 mag_abs = float(abs(s.mag))
                                 self._acc_mag_win.add_sample(s.ts_ms, mag_abs)
 
-                    # ---- Fenster-Anfang nach vorne schieben (alte Samples raus) ----
+                    # ---- Slide window start forward (remove old samples) ----
                     self._emg_rms_win.drop_older_than(win_start)
                     self._acc_mag_win.drop_older_than(win_start)
 
-                    # ---- FusedSample aus Online-Stats berechnen ----
+                    # ---- Compute FusedSample from online stats ----
                     fused = self._compute_fused_sample(ts_ms=win_end)
                     if fused is not None:
                         await self._fusion_b.publish(fused)
 
-                    # 1 ms weiter im Fusion-Clock
+                    # Next tick in fusion clock
                     next_fusion_ts += fusion_step_ms
                     steps += 1
 
-                # Kleine Pause, damit die CPU nicht 100% läuft
+                # Small pause to prevent 100% CPU usage
                 await asyncio.sleep(0.0005)
         finally:
             await self._emg_b.unsubscribe(emg_q)
             await self._acc_b.unsubscribe(acc_q)
+
+    # --------------------------------------------------------------------- #
+    # Feature computation / Fusion
+    # --------------------------------------------------------------------- #
 
     def _compute_fused_sample(
         self,
@@ -306,7 +245,7 @@ class FusionManager:
                 acc_valid = False
 
         # ------------- Fusion gating -------------
-        # Aktuell: nur senden, wenn beide Streams gültig sind (inkl. Hold).
+        # Currently: only send if both streams are valid (including hold).
         if not emg_valid or not acc_valid:
             return None
 
