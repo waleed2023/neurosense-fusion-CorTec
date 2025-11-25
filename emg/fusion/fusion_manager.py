@@ -127,8 +127,8 @@ class FusionManager:
                     pass
 
                 # --- 3) Reorder: sort by timestamp ---
-                emg_buf.sort(key=lambda s: s.ts_ms)
-                acc_buf.sort(key=lambda s: s.ts_ms)
+                #emg_buf.sort(key=lambda s: s.ts_ms)
+                #acc_buf.sort(key=lambda s: s.ts_ms)
 
                 now = now_ms()
 
