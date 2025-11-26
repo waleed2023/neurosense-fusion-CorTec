@@ -93,29 +93,72 @@ class AccelManager:
         return AX, AY, AZ, MAG
 
     async def run(self):
-        period = 1.0 / max(1.0, ACCEL_ODR_HZ)
-        try:
-            with SMBus(I2C_BUS) as bus:
-                self._bus = bus
-                self._init_sensor(bus, I2C_ADDR)
-                sys.stdout.write(f"{LOG_PREFIX} Accel-Streaming started (I2C bus={I2C_BUS} addr=0x{I2C_ADDR:02X})\n")
-                last = 0.0
-                while not self._stop.is_set():
-                    # Poll
-                    AX, AY, AZ, MAG = self._read_accel_g(bus, I2C_ADDR)
-                    sample = emg_pb2.AccelSample(ax=AX, ay=AY, az=AZ, mag=MAG, ts_ms=int(time.time()*1000))  # send AccelSample to Broadcaster
-                    await self.broadcaster.publish(sample)
+        """
+        Main loop for the accelerometer.
 
-                    # Sleep to achieve approx. ODR_HZ
-                    now = time.perf_counter()
-                    if last == 0.0:
-                        last = now
-                    dt = now - last
-                    sleep_t = max(0.0, period - dt)
-                    await asyncio.sleep(sleep_t)
-                    last = time.perf_counter()
-        except asyncio.CancelledError:
-            sys.stdout.write(f"{LOG_PREFIX} Accel-Streaming stopped\n")
-            pass
-        except Exception as e:
-            sys.stdout.write(f"{LOG_PREFIX} Accel-Error: {e}\n")
+        - Opens the I²C bus
+        - Initializes the LSM6DSx
+        - Polls data and publishes AccelSample
+        - On any I²C / sensor error it closes the bus, waits a bit and tries again
+        """
+        period = 1.0 / max(1.0, ACCEL_ODR_HZ)
+        backoff = 1.0  # reconnect delay in seconds (will grow up to max_backoff)
+        max_backoff = 10.0
+
+        while not self._stop.is_set():
+            try:
+                # (re)open I²C bus + init sensor
+                with SMBus(I2C_BUS) as bus:
+                    self._bus = bus
+                    self._init_sensor(bus, I2C_ADDR)
+                    sys.stdout.write(
+                        f"{LOG_PREFIX} Accel-Streaming started "
+                        f"(I2C bus={I2C_BUS} addr=0x{I2C_ADDR:02X})\n"
+                    )
+
+                    last = 0.0
+                    # successful start → reset backoff
+                    backoff = 1.0
+
+                    # normal polling loop
+                    while not self._stop.is_set():
+                        # 1) read sensor
+                        AX, AY, AZ, MAG = self._read_accel_g(bus, I2C_ADDR)
+
+                        sample = emg_pb2.AccelSample(
+                            ax=AX,
+                            ay=AY,
+                            az=AZ,
+                            mag=MAG,
+                            ts_ms=int(time.time() * 1000),
+                        )
+                        await self.broadcaster.publish(sample)
+
+                        # 2) sleep to hit desired ODR
+                        now = time.perf_counter()
+                        if last == 0.0:
+                            last = now
+                        dt = now - last
+                        sleep_t = max(0.0, period - dt)
+                        await asyncio.sleep(sleep_t)
+                        last = time.perf_counter()
+
+                # leaving the "with SMBus(...)" block normally -> bus closed
+                self._bus = None
+
+            except asyncio.CancelledError:
+                sys.stdout.write(f"{LOG_PREFIX} Accel-Streaming stopped\n")
+                break
+
+            except Exception as e:
+                # any I²C / sensor error → log + reconnect with backoff
+                sys.stdout.write(f"{LOG_PREFIX} Accel-Error: {e}\n")
+                self._bus = None
+
+                if self._stop.is_set():
+                    break
+
+                # wait a bit before trying again
+                await asyncio.sleep(backoff)
+                backoff = min(backoff * 2.0, max_backoff)
+
