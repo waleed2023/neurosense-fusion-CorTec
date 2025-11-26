@@ -4,7 +4,7 @@ import struct
 import asyncio
 from typing import Optional
 from bleak import BleakClient, BleakScanner
-from .config import ANALOG_CHAR, BATTERY_CHAR, TARGET_MAC, TARGET_NAME, VALUE_MAX, LOG_PREFIX
+from .config import ANALOG_CHAR, BATTERY_CHAR, TARGET_MAC, TARGET_NAME, VALUE_MAX, LOG_PREFIX, EMG_IDLE_TIMEOUT_MS
 from .proto import emg_pb2
 from dbus_next.aio import MessageBus
 from dbus_next import Variant, BusType
@@ -14,6 +14,40 @@ import random
 def now_ms() -> int:
     return int(time.time() * 1000)
 
+
+class JitterTracker:
+    """Track timing jitter statistics for incoming samples."""
+
+    def __init__(self, nominal_period_ms: float):
+        self.nominal = nominal_period_ms
+        self.last_ts: int | None = None
+        self.count = 0
+        self.sum_abs = 0.0
+        self.max_abs = 0.0
+
+    def add(self, ts_ms: int):
+        if self.last_ts is None:
+            self.last_ts = ts_ms
+            return
+
+        dt = ts_ms - self.last_ts
+        self.last_ts = ts_ms
+
+        jitter = dt - self.nominal  # kann positiv/negativ sein
+        j_abs = abs(jitter)
+
+        self.count += 1
+        self.sum_abs += j_abs
+        if j_abs > self.max_abs:
+            self.max_abs = j_abs
+
+    def stats(self) -> tuple[float, float]:
+        """Gibt (mean_abs_jitter_ms, max_abs_jitter_ms) zurück."""
+        if self.count == 0:
+            return 0.0, 0.0
+        mean_abs = self.sum_abs / self.count
+        return mean_abs, self.max_abs
+    
 
 class BLEManager:
     """
@@ -28,7 +62,26 @@ class BLEManager:
         self._resolved_mac: Optional[str] = TARGET_MAC or None
         # cache for last EMG timestamp, used for reconnect on idle
         self._last_emg_ms = 0
-        self._idle_timeout_ms = int(os.getenv("EMG_IDLE_TIMEOUT_MS", "5000"))  # default 5s
+        self._idle_timeout_ms = EMG_IDLE_TIMEOUT_MS  # default 5s
+
+        # jitter tracker
+        self._jitter = JitterTracker(nominal_period_ms=100.0) # nominal 10 Hz
+
+
+    def _log_jitter_summary(self) -> None:
+        mean_abs, max_abs = self._jitter.stats()
+        # in case of no samples, avoid division by zero
+        if self._jitter.count == 0:
+            sys.stdout.write(f"{LOG_PREFIX} EMG jitter: no samples, nothing to report\n")
+            return
+
+        sys.stdout.write(
+            f"{LOG_PREFIX} EMG jitter summary: "
+            f"mean|Δt-nominal|={mean_abs:.2f} ms, "
+            f"max|Δt-nominal|={max_abs:.2f} ms "
+            f"over {self._jitter.count} intervals\n"
+        )
+
 
     async def stop(self):
         self._stop.set()
@@ -38,6 +91,8 @@ class BLEManager:
         except Exception:
             sys.stderr.write(f"{LOG_PREFIX} BLEManager stop error\n")
             pass
+        self._log_jitter_summary()
+
 
     async def _resolve_mac(self, timeout: float = 3.0) -> Optional[str]:
         """
@@ -81,15 +136,26 @@ class BLEManager:
             v = struct.unpack_from("<H", data, 0)[0]
             if v > VALUE_MAX:
                 v = VALUE_MAX
-            self._last_emg_ms = now_ms()
+
+            # get current timestamp once and use it everywhere
+            now = now_ms()
+            self._last_emg_ms = now
+
             sample = emg_pb2.EmgSample(
                 value=v,
-                ts_ms=now_ms(),
+                ts_ms=now,
                 battery=self._battery,
             )
-            asyncio.get_event_loop().create_task(self.broadcaster.publish(sample))
+            asyncio.get_event_loop().create_task(
+                self.broadcaster.publish(sample)
+            )
+
+            # --- Jitter measure (Sensor -> HAL) ---
+            self._jitter.add(now)
+
         except Exception as e:
             sys.stderr.write(f"{LOG_PREFIX} on_emg error: {e}\n")
+
 
     
     async def run(self):

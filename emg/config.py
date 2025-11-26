@@ -86,3 +86,5 @@ DEVICE_IFACE = "org.bluez.Device1"
 DEFAULT_APP_PATH = "/org/bluez/protoble"
 DEFAULT_ADV_PATH = f"{DEFAULT_APP_PATH}/advertisement0"
 DEFAULT_ADAPTER = "/org/bluez/hci0"
+# ===== Other Defaults =====
+EMG_IDLE_TIMEOUT_MS = int(os.getenv("EMG_IDLE_TIMEOUT_MS", "5000"))  # default 5s

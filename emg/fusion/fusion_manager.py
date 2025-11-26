@@ -245,7 +245,6 @@ class FusionManager:
                 acc_valid = False
 
         # ------------- Fusion gating -------------
-        # Currently: only send if both streams are valid (including hold).
         if not emg_valid or not acc_valid:
             return None
 
