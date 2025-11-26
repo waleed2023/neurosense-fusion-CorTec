@@ -20,7 +20,7 @@ class JitterTracker:
 
     def __init__(self, nominal_period_ms: float):
         self.nominal = nominal_period_ms
-        self.last_ts: int | None = None
+        self.last_ts: Optional[int] = None
         self.count = 0
         self.sum_dt = 0.0
         self.min_dt = float("inf")
@@ -99,17 +99,7 @@ class BLEManager:
 
 
     def _log_jitter_summary(self) -> None:
-        stats = self._jitter.stats()
-        if stats["count"] == 0:
-            sys.stdout.write(f"{LOG_PREFIX} EMG jitter: no samples, nothing to report\n")
-            return
-
-        mean_dt = stats["mean_dt"]
-        min_dt = stats["min_dt"]
-        max_dt = stats["max_dt"]
-        mean_abs = stats["mean_abs_jitter"]
-        max_abs = stats["max_abs_jitter"]
-        
+        """
         # mean_dt:
         #   Average time difference between two consecutive EMG samples (in ms).
         #   This is effectively the average sampling period as seen by the HAL.
@@ -133,6 +123,18 @@ class BLEManager:
         #
         # stats["count"]:
         #   Number of intervals (N-1 if N samples were observed).
+        """
+
+        stats = self._jitter.stats()
+        if stats["count"] == 0:
+            sys.stdout.write(f"{LOG_PREFIX} EMG jitter: no samples, nothing to report\n")
+            return
+
+        mean_dt = stats["mean_dt"]
+        min_dt = stats["min_dt"]
+        max_dt = stats["max_dt"]
+        mean_abs = stats["mean_abs_jitter"]
+        max_abs = stats["max_abs_jitter"]
 
         sys.stdout.write(
             f"{LOG_PREFIX} EMG timing stats (target ~100 ms / 10 Hz): "
