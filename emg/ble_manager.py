@@ -119,7 +119,7 @@ class BLEManager:
             f"max|Δt-100ms|={max_abs:.1f} ms "
             f"over {stats['count']} intervals\n"
         )
-:contentReference[oaicite:1]{index=1}
+
 
 
 
