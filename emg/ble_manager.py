@@ -22,6 +22,9 @@ class JitterTracker:
         self.nominal = nominal_period_ms
         self.last_ts: int | None = None
         self.count = 0
+        self.sum_dt = 0.0
+        self.min_dt = float("inf")
+        self.max_dt = 0.0
         self.sum_abs = 0.0
         self.max_abs = 0.0
 
@@ -33,20 +36,47 @@ class JitterTracker:
         dt = ts_ms - self.last_ts
         self.last_ts = ts_ms
 
-        jitter = dt - self.nominal  # kann positiv/negativ sein
-        j_abs = abs(jitter)
+        if dt <= 0:
+            return  # komische Zeitstempel ignorieren
 
+        # dt-Statistik
         self.count += 1
+        self.sum_dt += dt
+        if dt < self.min_dt:
+            self.min_dt = dt
+        if dt > self.max_dt:
+            self.max_dt = dt
+
+        # Jitter vs. nominal
+        jitter = dt - self.nominal
+        j_abs = abs(jitter)
         self.sum_abs += j_abs
         if j_abs > self.max_abs:
             self.max_abs = j_abs
 
-    def stats(self) -> tuple[float, float]:
-        """Gibt (mean_abs_jitter_ms, max_abs_jitter_ms) zurück."""
+    def stats(self) -> dict:
+        """Gibt dt- und Jitter-Statistik zurück."""
         if self.count == 0:
-            return 0.0, 0.0
-        mean_abs = self.sum_abs / self.count
-        return mean_abs, self.max_abs
+            return {
+                "count": 0,
+                "mean_dt": 0.0,
+                "min_dt": 0.0,
+                "max_dt": 0.0,
+                "mean_abs_jitter": 0.0,
+                "max_abs_jitter": 0.0,
+            }
+
+        mean_dt = self.sum_dt / self.count
+        mean_abs_jitter = self.sum_abs / self.count
+        return {
+            "count": self.count,
+            "mean_dt": mean_dt,
+            "min_dt": self.min_dt,
+            "max_dt": self.max_dt,
+            "mean_abs_jitter": mean_abs_jitter,
+            "max_abs_jitter": self.max_abs,
+        }
+
     
 
 class BLEManager:
@@ -69,18 +99,28 @@ class BLEManager:
 
 
     def _log_jitter_summary(self) -> None:
-        mean_abs, max_abs = self._jitter.stats()
-        # in case of no samples, avoid division by zero
-        if self._jitter.count == 0:
+        stats = self._jitter.stats()
+        if stats["count"] == 0:
             sys.stdout.write(f"{LOG_PREFIX} EMG jitter: no samples, nothing to report\n")
             return
 
+        mean_dt = stats["mean_dt"]
+        min_dt = stats["min_dt"]
+        max_dt = stats["max_dt"]
+        mean_abs = stats["mean_abs_jitter"]
+        max_abs = stats["max_abs_jitter"]
+
         sys.stdout.write(
-            f"{LOG_PREFIX} EMG jitter summary: "
-            f"mean|Δt-nominal|={mean_abs:.2f} ms, "
-            f"max|Δt-nominal|={max_abs:.2f} ms "
-            f"over {self._jitter.count} intervals\n"
+            f"{LOG_PREFIX} EMG intervals: "
+            f"mean_dt={mean_dt:.1f} ms, "
+            f"min_dt={min_dt:.1f} ms, "
+            f"max_dt={max_dt:.1f} ms, "
+            f"mean|Δt-100ms|={mean_abs:.1f} ms, "
+            f"max|Δt-100ms|={max_abs:.1f} ms "
+            f"over {stats['count']} intervals\n"
         )
+:contentReference[oaicite:1]{index=1}
+
 
 
     async def stop(self):
