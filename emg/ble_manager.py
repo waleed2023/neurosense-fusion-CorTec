@@ -109,17 +109,40 @@ class BLEManager:
         max_dt = stats["max_dt"]
         mean_abs = stats["mean_abs_jitter"]
         max_abs = stats["max_abs_jitter"]
+        
+        # mean_dt:
+        #   Average time difference between two consecutive EMG samples (in ms).
+        #   This is effectively the average sampling period as seen by the HAL.
+        #
+        # min_dt:
+        #   Smallest observed interval (in ms). Very small values indicate bursts
+        #   where multiple samples arrive almost at the same time.
+        #
+        # max_dt:
+        #   Largest observed interval (in ms). Large values indicate gaps/dropouts
+        #   where no new sample arrived for a while.
+        #
+        # mean|Δt-100ms|:
+        #   Average absolute deviation from the ideal 10 Hz grid (100 ms period).
+        #   0 ms would mean perfectly regular 10 Hz timing. Large values mean that
+        #   most intervals are far away from the ideal 100 ms spacing.
+        #
+        # max|Δt-100ms|:
+        #   Worst-case absolute deviation of a single interval from 100 ms.
+        #   Example: Δt = 600 ms -> |600 - 100| = 500 ms.
+        #
+        # stats["count"]:
+        #   Number of intervals (N-1 if N samples were observed).
 
         sys.stdout.write(
-            f"{LOG_PREFIX} EMG intervals: "
-            f"mean_dt={mean_dt:.1f} ms, "
-            f"min_dt={min_dt:.1f} ms, "
-            f"max_dt={max_dt:.1f} ms, "
-            f"mean|Δt-100ms|={mean_abs:.1f} ms, "
-            f"max|Δt-100ms|={max_abs:.1f} ms "
-            f"over {stats['count']} intervals\n"
+            f"{LOG_PREFIX} EMG timing stats (target ~100 ms / 10 Hz): "
+            f"mean_dt={mean_dt:.1f} ms (avg interval), "
+            f"min_dt={min_dt:.1f} ms (shortest), "
+            f"max_dt={max_dt:.1f} ms (longest), "
+            f"mean|Δt-100ms|={mean_abs:.1f} ms (avg deviation), "
+            f"max|Δt-100ms|={max_abs:.1f} ms (worst deviation), "
+            f"intervals={stats['count']}\n"
         )
-
 
 
 
