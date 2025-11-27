@@ -8,7 +8,7 @@ from emg.measurment.jitter_tracker import JitterTracker
 from emg.fusion.rms_mag import OnlineRMSWindow, OnlineMagWindow
 from emg.broadcaster import Broadcaster
 from emg.proto import emg_pb2, fusion_pb2
-from emg.config import WINDOW_MS, STEP_MS, MAX_DELAY_MS
+from emg.config import WINDOW_MS, STEP_MS, MAX_DELAY_MS, MAX_RATE_HZ_EMG, MAX_RATE_HZ_ACC
 
 
 def now_ms() -> int:
