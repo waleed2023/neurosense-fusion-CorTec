@@ -99,8 +99,11 @@ class JitterTracker:
         """
 
         stats = self.stats()
+
         if stats["count"] == 0:
-            sys.stdout.write(f"{LOG_PREFIX} EMG jitter: no samples, nothing to report\n")
+            sys.stdout.write(
+                f"{LOG_PREFIX} {self.name} jitter: no intervals, nothing to report\n"
+            )
             return
 
         mean_dt = stats["mean_dt"]
@@ -109,12 +112,19 @@ class JitterTracker:
         mean_abs = stats["mean_abs_jitter"]
         max_abs = stats["max_abs_jitter"]
 
+        nominal = self.nominal
+        if nominal > 0.0:
+            nominal_hz = 1000.0 / nominal
+            target_text = f"target ~{nominal:.1f} ms / {nominal_hz:.1f} Hz"
+        else:
+            target_text = "no nominal period configured"
+
         sys.stdout.write(
-            f"{LOG_PREFIX} Sensor timing stats "
+            f"{LOG_PREFIX} {self.name} timing stats ({target_text}): "
             f"mean_dt={mean_dt:.1f} ms (avg interval), "
             f"min_dt={min_dt:.1f} ms (shortest), "
             f"max_dt={max_dt:.1f} ms (longest), "
-            f"mean|Δt-100ms|={mean_abs:.1f} ms (avg deviation), "
-            f"max|Δt-100ms|={max_abs:.1f} ms (worst deviation), "
+            f"mean|Δt-nominal|={mean_abs:.1f} ms (avg deviation), "
+            f"max|Δt-nominal|={max_abs:.1f} ms (worst deviation), "
             f"intervals={stats['count']}\n"
         )

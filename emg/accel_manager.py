@@ -41,7 +41,7 @@ class AccelManager:
         self._stop = asyncio.Event()
         self._bus: Optional[SMBus] = None
         nominal_ms = 1000.0 / max(1.0, float(ACCEL_ODR_HZ))
-        self._jitter = JitterTracker(nominal_period_ms=nominal_ms) # 1kHz nominal
+        self._jitter = JitterTracker(nominal_period_ms=nominal_ms, name="ACCEL"= # 1kHz nominal
 
 
     async def stop(self):
