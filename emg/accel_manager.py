@@ -3,6 +3,7 @@ import time
 import asyncio
 import sys
 from typing import Optional
+from emg.measurment.jitter_tracker import JitterTracker
 
 from smbus2 import SMBus
 
