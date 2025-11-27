@@ -124,8 +124,14 @@ class JitterTracker:
         else:
             target_text = "no nominal period configured"
 
+        color = COLOR_GREEN
+        if mean_abs > 10:
+            color = COLOR_YELLOW
+        if mean_abs > 50:
+            color = COLOR_RED
+
         sys.stdout.write(
-            f"{COLOR_YELLOW}"
+            f"{color}"
             f"{LOG_PREFIX} {self.name} timing stats ({target_text}):\n"
             f"  intervals        : {stats['count']}\n"
             f"  dt [ms]          : mean={mean_dt:.1f}, min={min_dt:.1f}, max={max_dt:.1f}\n"
