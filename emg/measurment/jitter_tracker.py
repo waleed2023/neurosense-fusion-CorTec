@@ -110,7 +110,7 @@ class JitterTracker:
         max_abs = stats["max_abs_jitter"]
 
         sys.stdout.write(
-            f"{LOG_PREFIX} EMG timing stats (target ~100 ms / 10 Hz): "
+            f"{LOG_PREFIX} Sensor timing stats "
             f"mean_dt={mean_dt:.1f} ms (avg interval), "
             f"min_dt={min_dt:.1f} ms (shortest), "
             f"max_dt={max_dt:.1f} ms (longest), "
