@@ -31,6 +31,7 @@ class BLEManager:
         # cache for last EMG timestamp, used for reconnect on idle
         self._last_emg_ms = 0
         self._idle_timeout_ms = EMG_IDLE_TIMEOUT_MS  # default 5s
+        self._jitter = JitterTracker(nominal_period_ms=100.0) # nominal 10 Hz
 
 
     async def stop(self):
@@ -41,7 +42,7 @@ class BLEManager:
         except Exception:
             sys.stderr.write(f"{LOG_PREFIX} BLEManager stop error\n")
             pass
-        self._log_jitter_summary()
+        self._jitter._log_jitter_summary()
 
 
     async def _resolve_mac(self, timeout: float = 3.0) -> Optional[str]:
@@ -101,8 +102,7 @@ class BLEManager:
             )
 
             # --- Jitter measure (Sensor -> HAL) ---
-            jitter = JitterTracker(nominal_period_ms=100.0) # nominal 10 Hz
-            jitter.add(now)
+            self._jitter.add(now)
 
         except Exception as e:
             sys.stderr.write(f"{LOG_PREFIX} on_emg error: {e}\n")
