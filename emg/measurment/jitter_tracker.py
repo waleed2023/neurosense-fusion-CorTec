@@ -98,7 +98,7 @@ class JitterTracker:
         #   Number of intervals (N-1 if N samples were observed).
         """
 
-        stats = self..stats()
+        stats = self.stats()
         if stats["count"] == 0:
             sys.stdout.write(f"{LOG_PREFIX} EMG jitter: no samples, nothing to report\n")
             return
