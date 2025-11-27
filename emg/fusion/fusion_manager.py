@@ -3,6 +3,7 @@
 import asyncio
 import time
 from typing import Optional, List
+from emg.measurment.jitter_tracker import JitterTracker
 
 from emg.fusion.rms_mag import OnlineRMSWindow, OnlineMagWindow
 from emg.broadcaster import Broadcaster
@@ -58,6 +59,9 @@ class FusionManager:
         self._last_move_level: float = 0.0
         self._last_move_var: float = 0.0
         self._has_acc_level: bool = False
+
+        # ---jitter trackers---
+        self._jitter = JitterTracker(nominal_period_ms=step_ms, name="FUSION") # nominal fusion step
 
     # --------------------------------------------------------------------- #
     # Lifecycle
@@ -171,6 +175,7 @@ class FusionManager:
                     fused = self._compute_fused_sample(ts_ms=win_end)
                     if fused is not None:
                         await self._fusion_b.publish(fused)
+                        self._jitter.add(fused.ts_ms)
 
                     # Next tick in fusion clock
                     next_fusion_ts += fusion_step_ms
