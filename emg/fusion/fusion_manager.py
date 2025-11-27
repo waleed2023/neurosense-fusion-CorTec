@@ -190,8 +190,7 @@ class FusionManager:
                     fused = self._compute_fused_sample(ts_ms=win_end)
                     if fused is not None:
                         await self._fusion_b.publish(fused)
-                        self._jitter.add(fused.ts_ms)
-                        self._fusion_jitter.add(fused.ts_ms)
+
 
                     # Next tick in fusion clock
                     next_fusion_ts += fusion_step_ms
