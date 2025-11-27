@@ -7,7 +7,7 @@ from typing import Optional
 class JitterTracker:
     """Track timing jitter statistics for incoming samples."""
 
-    def __init__(self, nominal_period_ms: float):
+    def __init__(self, nominal_period_ms: float, name: Optional[str] = None):
         self.nominal = nominal_period_ms
         self.last_ts: Optional[int] = None
         self.count = 0
@@ -16,7 +16,7 @@ class JitterTracker:
         self.max_dt = 0.0
         self.sum_abs = 0.0
         self.max_abs = 0.0
-
+        self.name = name or "JitterTracker"
 
     def add(self, ts_ms: int):
         if self.last_ts is None:
