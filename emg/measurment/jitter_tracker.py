@@ -3,6 +3,11 @@ from emg.config import LOG_PREFIX
 from typing import Optional
 
 
+# del me later just for colored output in terminal
+COLOR_RESET = "\033[0m"
+COLOR_YELLOW = "\033[33m"
+COLOR_RED = "\033[31m"
+COLOR_GREEN = "\033[32m"
 
 class JitterTracker:
     """Track timing jitter statistics for incoming samples."""
@@ -120,8 +125,10 @@ class JitterTracker:
             target_text = "no nominal period configured"
 
         sys.stdout.write(
+            f"{COLOR_YELLOW}"
             f"{LOG_PREFIX} {self.name} timing stats ({target_text}):\n"
             f"  intervals        : {stats['count']}\n"
             f"  dt [ms]          : mean={mean_dt:.1f}, min={min_dt:.1f}, max={max_dt:.1f}\n"
-            f"  |dt - nominal|   : mean={mean_abs:.1f} ms, max={max_abs:.1f} ms\n"
+            f"  |dt - target_dt| : mean={mean_abs:.1f} ms, max={max_abs:.1f} ms\n"
+            f"{COLOR_RESET}"
         )
