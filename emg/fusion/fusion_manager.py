@@ -61,7 +61,18 @@ class FusionManager:
         self._has_acc_level: bool = False
 
         # ---jitter trackers---
-        self._jitter = JitterTracker(nominal_period_ms=step_ms, name="FUSION") # nominal fusion step
+        emg_nominal_ms = 1000.0 / float(MAX_RATE_HZ_EMG)   # z.B. 100 ms
+        acc_nominal_ms = 1000.0 / float(MAX_RATE_HZ_ACC)   # z.B. ~1.25 ms bei 800 Hz
+
+        self._emg_jitter_at_fusion = JitterTracker(
+            nominal_period_ms=emg_nominal_ms,
+            name="EMG@FUSION",
+        )
+        self._acc_jitter_at_fusion = JitterTracker(
+            nominal_period_ms=acc_nominal_ms,
+            name="ACC@FUSION",
+        )
+        
 
     # --------------------------------------------------------------------- #
     # Lifecycle
@@ -79,7 +90,8 @@ class FusionManager:
             except asyncio.CancelledError:
                 pass
             self._task = None
-        self._jitter._log_jitter_summary()
+        self._emg_jitter_at_fusion._log_jitter_summary()
+        self._acc_jitter_at_fusion._log_jitter_summary()
 
     # --------------------------------------------------------------------- #
     # Debug properties
@@ -119,6 +131,7 @@ class FusionManager:
                         s = emg_q.get_nowait()
                         self._debug_emg_read += 1
                         emg_buf.append(s)
+                        self._emg_jitter_at_fusion.add(now_ms()) # track jitter at fusion time  Hal -> Fusion
                 except asyncio.QueueEmpty:
                     pass
 
@@ -128,6 +141,7 @@ class FusionManager:
                         s = acc_q.get_nowait()
                         self._debug_acc_read += 1
                         acc_buf.append(s)
+                        self._acc_jitter_at_fusion.add(now_ms()) # track jitter at fusion time  Hal -> Fusion
                 except asyncio.QueueEmpty:
                     pass
 
@@ -177,6 +191,7 @@ class FusionManager:
                     if fused is not None:
                         await self._fusion_b.publish(fused)
                         self._jitter.add(fused.ts_ms)
+                        self._fusion_jitter.add(fused.ts_ms)
 
                     # Next tick in fusion clock
                     next_fusion_ts += fusion_step_ms
