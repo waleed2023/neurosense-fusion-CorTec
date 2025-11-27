@@ -120,11 +120,8 @@ class JitterTracker:
             target_text = "no nominal period configured"
 
         sys.stdout.write(
-            f"{LOG_PREFIX} {self.name} timing stats ({target_text}): "
-            f"mean_dt={mean_dt:.1f} ms (avg interval), "
-            f"min_dt={min_dt:.1f} ms (shortest), "
-            f"max_dt={max_dt:.1f} ms (longest), "
-            f"mean|Δt-nominal|={mean_abs:.1f} ms (avg deviation), "
-            f"max|Δt-nominal|={max_abs:.1f} ms (worst deviation), "
-            f"intervals={stats['count']}\n"
+            f"{LOG_PREFIX} {self.name} timing stats ({target_text}):\n"
+            f"  intervals        : {stats['count']}\n"
+            f"  dt [ms]          : mean={mean_dt:.1f}, min={min_dt:.1f}, max={max_dt:.1f}\n"
+            f"  |dt - nominal|   : mean={mean_abs:.1f} ms, max={max_abs:.1f} ms\n"
         )
