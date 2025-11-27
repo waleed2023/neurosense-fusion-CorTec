@@ -79,6 +79,7 @@ class FusionManager:
             except asyncio.CancelledError:
                 pass
             self._task = None
+        self._jitter._log_jitter_summary()
 
     # --------------------------------------------------------------------- #
     # Debug properties
