@@ -90,8 +90,8 @@ class FusionManager:
             except asyncio.CancelledError:
                 pass
             self._task = None
-        self._emg_jitter_at_fusion._log_jitter_summary()
-        self._acc_jitter_at_fusion._log_jitter_summary()
+        #self._emg_jitter_at_fusion._log_jitter_summary()
+        #self._acc_jitter_at_fusion._log_jitter_summary()
 
     # --------------------------------------------------------------------- #
     # Debug properties
@@ -141,7 +141,7 @@ class FusionManager:
                         s = acc_q.get_nowait()
                         self._debug_acc_read += 1
                         acc_buf.append(s)
-                        self._acc_jitter_at_fusion.add(now_ms()) # track jitter at fusion time  Hal -> Fusion
+                        #self._acc_jitter_at_fusion.add(now_ms()) # track jitter at fusion time  Hal -> Fusion
                 except asyncio.QueueEmpty:
                     pass
 
