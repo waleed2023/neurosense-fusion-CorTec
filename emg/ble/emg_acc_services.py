@@ -5,7 +5,14 @@ from emg.broadcaster import Broadcaster
 from emg.proto import emg_pb2, fusion_pb2
 from .gatt_core import GattService, NotifyChar, WriteChar, RpcStream
 from emg.config import EMG_SVC, EMG_PARAM, EMG_RET, ACC_SVC, ACC_PARAM, ACC_RET, FUSION_SVC, FUSION_PARAM, FUSION_RET, MAX_RATE_HZ_ACC, MAX_RATE_HZ_EMG, MAX_RATE_HZ_FUSION, LOG_PREFIX
+from emg.measurment.jitter_tracker import JitterTracker
+from emg.measurment.delay_tracker import DelayTracker
 
+
+
+
+def now_ms() -> int:
+    return int(time.time() * 1000)
 
 
 # --------- Streaming-Loops (lesen vom Broadcaster, senden via Notify) ---------
@@ -23,7 +30,8 @@ async def _emg_stream_loop(
     interval_s = 1.0 / max(1, req.max_rate_hz)
     last = 0.0
     loop = asyncio.get_running_loop()
-
+    emg_jitter = JitterTracker(nominal_period_ms=1000.0 / float(req.max_rate_hz), name="EMG_HAL_OUT")  # jitter tracker for outgoing EMG stream
+    emg_delay = DelayTracker(name="EMG_HAL_DELAY")  # delay tracker for outgoing EMG stream
     q: asyncio.Queue = await broadcaster.subscribe()
     try:
         while True:
@@ -31,12 +39,21 @@ async def _emg_stream_loop(
             now = loop.time()
             if now - last >= interval_s:
                 last = now
+                # delay and jitter tracking
+                send_ts_ms = now_ms()
+                emg_jitter.add(send_ts_ms)
+                age_ms = send_ts_ms - sample.ts_ms
+                emg_delay.add(age_ms, ts_ms=send_ts_ms)
+
                 await send_bytes(sample.SerializeToString())
     except asyncio.CancelledError:
         sys.stdout.write(f"{LOG_PREFIX} EMG-Streaming stopped\n")
         raise
     finally:
         await broadcaster.unsubscribe(q)
+        emg_jitter._log_jitter_summary()
+        emg_delay.log_summary()
+
 
 async def _acc_stream_loop(
     *, send_bytes: Callable[[bytes], Awaitable[None]],
@@ -51,6 +68,8 @@ async def _acc_stream_loop(
     interval_s = 1.0 / max(1, req.max_rate_hz)
     last = 0.0
     loop = asyncio.get_running_loop()
+    acc_jitter = JitterTracker(nominal_period_ms=1000.0 / float(req.max_rate_hz), name="ACC_HAL_OUT")  # jitter tracker for outgoing Accel stream
+    acc_delay = DelayTracker(name="ACC_HAL_DELAY")  # delay tracker for outgoing Accel stream
 
     q: asyncio.Queue = await broadcaster.subscribe()
     try:
@@ -65,7 +84,8 @@ async def _acc_stream_loop(
         raise
     finally:
         await broadcaster.unsubscribe(q)
-
+        acc_jitter._log_jitter_summary()
+        acc_delay.log_summary()
 
 async def _fusion_stream_loop(
     *,
@@ -89,6 +109,8 @@ async def _fusion_stream_loop(
 
     loop = asyncio.get_running_loop()
     last = 0.0
+    fusion_jitter = JitterTracker(nominal_period_ms=1000.0 / float(req.max_rate_hz), name="FUSION_HAL_OUT")  # jitter tracker for outgoing Fusion stream
+    fusion_delay = DelayTracker(name="FUSION_HAL_DELAY")  # delay tracker for outgoing Fusion stream
 
     q: asyncio.Queue = await broadcaster.subscribe()
     try:
@@ -99,9 +121,18 @@ async def _fusion_stream_loop(
                 # drop this sample to enforce max_rate_hz
                 continue
             last = now
+            send_ts = now_ms()
+            fusion_jitter.add(send_ts)
+
+            # Delay: wie alt ist das Fusions-Fenster?
+            # sample.ts_ms = window_end aus FusionManager
+            age_ms = send_ts - sample.ts_ms
+            fusion_delay.add(age_ms, ts_ms=send_ts)
             await send_bytes(sample.SerializeToString())
     finally:
         await broadcaster.unsubscribe(q)
+        fusion_jitter._log_jitter_summary()
+        fusion_delay.log_summary()
 
 
 # ------------------------------- Services ------------------------------------

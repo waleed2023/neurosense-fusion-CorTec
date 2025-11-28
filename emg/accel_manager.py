@@ -40,13 +40,13 @@ class AccelManager:
         self.broadcaster = broadcaster
         self._stop = asyncio.Event()
         self._bus: Optional[SMBus] = None
-        nominal_ms = 1000.0 / max(1.0, float(ACCEL_ODR_HZ))
-        self._jitter = JitterTracker(nominal_period_ms=nominal_ms, name="ACCEL") # 1kHz nominal
+       # nominal_ms = 1000.0 / max(1.0, float(ACCEL_ODR_HZ))
+        #self._jitter = JitterTracker(nominal_period_ms=nominal_ms, name="ACCEL") # 1kHz nominal
 
 
     async def stop(self):
         self._stop.set()
-        self._jitter._log_jitter_summary()
+        #self._jitter._log_jitter_summary()
 
     def _init_sensor(self, bus: SMBus, addr: int):
         # Soft-Reset
@@ -138,7 +138,7 @@ class AccelManager:
                             ts_ms=int(time.time() * 1000),
                         )
                         await self.broadcaster.publish(sample)
-                        self._jitter.add(sample.ts_ms)
+                        #self._jitter.add(sample.ts_ms)
 
                         # 2) sleep to hit desired ODR
                         now = time.perf_counter()
