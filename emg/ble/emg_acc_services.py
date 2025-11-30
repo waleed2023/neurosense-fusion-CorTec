@@ -78,6 +78,11 @@ async def _acc_stream_loop(
             now = loop.time()
             if now - last >= interval_s:
                 last = now
+                send_ts_ms = now_ms()
+                acc_jitter.add(send_ts_ms)
+                age_ms = send_ts_ms - sample.ts_ms
+                acc_delay.add(age_ms, ts_ms=send_ts_ms)
+                
                 await send_bytes(sample.SerializeToString())
     except asyncio.CancelledError:
         sys.stdout.write(f"{LOG_PREFIX} Accel-Streaming stopped\n")
