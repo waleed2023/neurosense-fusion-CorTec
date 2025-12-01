@@ -3,6 +3,7 @@ import sys
 import time
 from typing import Optional, Callable, Awaitable
 from emg.broadcaster import Broadcaster
+from emg.measurment.bandwidth import BandwidthTracker
 from emg.proto import emg_pb2, fusion_pb2
 from .gatt_core import GattService, NotifyChar, WriteChar, RpcStream
 from emg.config import EMG_SVC, EMG_PARAM, EMG_RET, ACC_SVC, ACC_PARAM, ACC_RET, FUSION_SVC, FUSION_PARAM, FUSION_RET, MAX_RATE_HZ_ACC, MAX_RATE_HZ_EMG, MAX_RATE_HZ_FUSION, LOG_PREFIX, SENSOR_METRICS_LOG_FILE
@@ -37,6 +38,7 @@ async def _emg_stream_loop(
         name="EMG_SENSOR_HAL_DELAY",
         log_file=SENSOR_METRICS_LOG_FILE,
     )
+    tracker = BandwidthTracker("EMG-HAL->App", log_interval_s=5.0)
     q: asyncio.Queue = await broadcaster.subscribe()
     try:
         while True:
@@ -44,6 +46,10 @@ async def _emg_stream_loop(
             now = loop.time()
             if now - last >= interval_s:
                 last = now
+                # Track bandwidth usage
+                payload = sample.SerializeToString()
+                tracker.add(len(payload))
+
                 # delay and jitter tracking
                 send_ts_ms = now_ms()
                 emg_jitter.add(send_ts_ms)
@@ -80,18 +86,26 @@ async def _acc_stream_loop(
         name="ACC_SENSOR_HAL_DELAY",
         log_file=SENSOR_METRICS_LOG_FILE,
     )
+    tracker = BandwidthTracker("ACC-HAL->App", log_interval_s=5.0)
     q: asyncio.Queue = await broadcaster.subscribe()
     try:
         while True:
             sample: emg_pb2.AccelSample = await q.get()
+
+
             now = loop.time()
             if now - last >= interval_s:
                 last = now
+                # Track bandwidth usage
+                payload = sample.SerializeToString()
+                tracker.add(len(payload))
+
                 send_ts_ms = now_ms()
                 acc_jitter.add(send_ts_ms)
                 age_ms = send_ts_ms - sample.ts_ms
                 acc_delay.add(age_ms, ts_ms=send_ts_ms)
                 acc_sensor_delay.add(age_ms, ts_ms=send_ts_ms)
+
                 await send_bytes(sample.SerializeToString())
     except asyncio.CancelledError:
         sys.stdout.write(f"{LOG_PREFIX} Accel-Streaming stopped\n")
@@ -127,14 +141,21 @@ async def _fusion_stream_loop(
     fusion_delay = DelayTracker(name="FUSION_HAL_DELAY")  # delay tracker for outgoing Fusion stream
 
     q: asyncio.Queue = await broadcaster.subscribe()
+    tracker = BandwidthTracker("FUSION-HAL->App", log_interval_s=5.0)
     try:
         while True:
             sample: fusion_pb2.FusedSample = await q.get()
+
+            
             now = loop.time()
             if (now - last) < interval_s:
                 # drop this sample to enforce max_rate_hz
                 continue
             last = now
+            # Track bandwidth usage
+            payload = sample.SerializeToString()
+            tracker.add(len(payload))
+            
             send_ts = now_ms()
             fusion_jitter.add(send_ts)
 
