@@ -7,11 +7,12 @@ import sys
 from .config import MAX_SAMPLES_PER_PACKET_FUSION, MAX_WAIT_S_FUSION, LOG_PREFIX
 from .proto import fusion_pb2, fusion_pb2_grpc
 
+
+class FusionService(fusion_pb2_grpc.FusionServicer):
+    def __init__(self, broadcaster):
+        self.broadcaster = broadcaster
+
     async def StreamFusionPackets(
-        """
-        Streams merged packets of FusedSample.
-        Each reply is a packet containing multiple fused samples.
-        """
         self,
         request: fusion_pb2.FusionSubscribeRequest,
         context: grpc.aio.ServicerContext,
@@ -41,7 +42,9 @@ from .proto import fusion_pb2, fusion_pb2_grpc
                         nxt = await asyncio.wait_for(q.get(), timeout=remaining)
                         batch.append(nxt)
                     except asyncio.TimeoutError:
-                        sys.stdout.write(f"{LOG_PREFIX} FusionService.StreamFusionPackets timeout\n")
+                        sys.stdout.write(
+                            f"{LOG_PREFIX} FusionService.StreamFusionPackets timeout\n"
+                        )
                         break
 
                 if interval > 0.0:
@@ -58,8 +61,12 @@ from .proto import fusion_pb2, fusion_pb2_grpc
 
                 yield packet
         except asyncio.CancelledError:
-            sys.stderr.write(f"{LOG_PREFIX} FusionService.StreamFusionPackets cancelled\n")
+            sys.stderr.write(
+                f"{LOG_PREFIX} FusionService.StreamFusionPackets cancelled\n"
+            )
             raise
         finally:
             await self.broadcaster.unsubscribe(q)
-            sys.stdout.write(f"{LOG_PREFIX} FusionService.StreamFusionPackets stopped\n")
+            sys.stdout.write(
+                f"{LOG_PREFIX} FusionService.StreamFusionPackets stopped\n"
+            )
