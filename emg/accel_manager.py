@@ -9,7 +9,7 @@ from smbus2 import SMBus
 
 from .config import (
     I2C_BUS, I2C_ADDR, ACCEL_ODR_HZ, ACCEL_FS_G, LOG_PREFIX, WHOAMI_EXPECTED,
-    REG_CTRL1_XL, REG_CTRL2_G, REG_CTRL3_C, REG_WHO_AM_I, OUTX_L_XL,
+    REG_CTRL1_XL, REG_CTRL2_G, REG_CTRL3_C, REG_WHO_AM_I, OUTX_L_XL, SENSOR_METRICS_LOG_FILE,
 )
 from .proto import emg_pb2
 
@@ -40,9 +40,14 @@ class AccelManager:
         self.broadcaster = broadcaster
         self._stop = asyncio.Event()
         self._bus: Optional[SMBus] = None
-       # nominal_ms = 1000.0 / max(1.0, float(ACCEL_ODR_HZ))
-        #self._jitter = JitterTracker(nominal_period_ms=nominal_ms, name="ACCEL") # 1kHz nominal
 
+        # jitter tracker for Sensor -> HAL
+        nominal_ms = 1000.0 / max(1.0, float(ACCEL_ODR_HZ))
+        self._sensor_jitter = JitterTracker(
+            nominal_period_ms=nominal_ms,
+            name="ACC_SENSOR",
+            log_file=SENSOR_METRICS_LOG_FILE,
+        )
 
     async def stop(self):
         self._stop.set()
@@ -138,7 +143,7 @@ class AccelManager:
                             ts_ms=int(time.time() * 1000),
                         )
                         await self.broadcaster.publish(sample)
-                        #self._jitter.add(sample.ts_ms)
+                        self._sensor_jitter.add(sample.ts_ms) # jitter measurement Sensor -> HAL
 
                         # 2) sleep to hit desired ODR
                         now = time.perf_counter()

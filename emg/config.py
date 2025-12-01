@@ -89,4 +89,8 @@ DEFAULT_ADAPTER = "/org/bluez/hci0"
 # ===== Other Defaults =====
 EMG_IDLE_TIMEOUT_MS = int(os.getenv("EMG_IDLE_TIMEOUT_MS", "5000"))  # default 5s
 METRICS_LOG_FILE = os.getenv("METRICS_LOG_FILE", "timing_metrics.csv")
-
+# Sensor metrics log file
+SENSOR_METRICS_LOG_FILE = os.getenv(
+    "SENSOR_METRICS_LOG_FILE",
+    "sensor_timing_metrics.csv",
+)

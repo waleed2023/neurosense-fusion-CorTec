@@ -4,7 +4,7 @@ import struct
 import asyncio
 from typing import Optional
 from bleak import BleakClient, BleakScanner
-from .config import ANALOG_CHAR, BATTERY_CHAR, TARGET_MAC, TARGET_NAME, VALUE_MAX, LOG_PREFIX, EMG_IDLE_TIMEOUT_MS
+from .config import ANALOG_CHAR, BATTERY_CHAR, TARGET_MAC, TARGET_NAME, VALUE_MAX, LOG_PREFIX, EMG_IDLE_TIMEOUT_MS, SENSOR_METRICS_LOG_FILE, MAX_RATE_HZ_EMG
 from .proto import emg_pb2
 from dbus_next.aio import MessageBus
 from dbus_next import Variant, BusType
@@ -31,8 +31,17 @@ class BLEManager:
         # cache for last EMG timestamp, used for reconnect on idle
         self._last_emg_ms = 0
         self._idle_timeout_ms = EMG_IDLE_TIMEOUT_MS  # default 5s
-        #self._jitter = JitterTracker(nominal_period_ms=100.0, name="EMG") # nominal 10 Hz
+        
+        # jitter tracker for Sensor -> HAL        
+        nominal_ms = 0.0
+        if MAX_RATE_HZ_EMG > 0:
+            nominal_ms = 1000.0 / float(MAX_RATE_HZ_EMG)
 
+        self._sensor_jitter = JitterTracker(
+            nominal_period_ms=nominal_ms,
+            name="EMG_SENSOR",
+            log_file=SENSOR_METRICS_LOG_FILE,
+        )
 
     async def stop(self):
         self._stop.set()
@@ -42,7 +51,6 @@ class BLEManager:
         except Exception:
             sys.stderr.write(f"{LOG_PREFIX} BLEManager stop error\n")
             pass
-        #self._jitter._log_jitter_summary()
 
 
     async def _resolve_mac(self, timeout: float = 3.0) -> Optional[str]:
@@ -100,9 +108,8 @@ class BLEManager:
             asyncio.get_event_loop().create_task(
                 self.broadcaster.publish(sample)
             )
-
-            # --- Jitter measure (Sensor -> HAL) ---
-            #self._jitter.add(now)
+            # Jitter measurement Sensor -> PC
+            self._sensor_jitter.add(now)
 
         except Exception as e:
             sys.stderr.write(f"{LOG_PREFIX} on_emg error: {e}\n")
