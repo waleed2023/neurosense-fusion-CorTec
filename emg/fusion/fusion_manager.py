@@ -131,7 +131,7 @@ class FusionManager:
                         s = emg_q.get_nowait()
                         self._debug_emg_read += 1
                         emg_buf.append(s)
-                        self._emg_jitter_at_fusion.add(now_ms()) # track jitter at fusion time  Hal -> Fusion
+                        #self._emg_jitter_at_fusion.add(now_ms()) # track jitter at fusion time  Hal -> Fusion
                 except asyncio.QueueEmpty:
                     pass
 
