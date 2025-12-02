@@ -27,6 +27,7 @@ async def _emg_stream_loop(
     req = emg_pb2.SubscribeRequest()
     try:
         req.ParseFromString(req_bytes)
+        sys.stdout.write(f"{LOG_PREFIX} EMG SubscribeRequest: max_rate_hz={req.max_rate_hz}\n")
     except Exception:
         req.max_rate_hz = MAX_RATE_HZ_EMG # fallback max rate
     interval_s = 1.0 / max(1, req.max_rate_hz)
