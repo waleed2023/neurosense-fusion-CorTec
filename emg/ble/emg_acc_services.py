@@ -57,7 +57,7 @@ async def _emg_stream_loop(
                 emg_delay.add(age_ms, ts_ms=send_ts_ms)
                 emg_sensor_delay.add(age_ms, ts_ms=send_ts_ms)
 
-                await send_bytes(sample.SerializeToString())
+                await send_bytes(payload)
     except asyncio.CancelledError:
         sys.stdout.write(f"{LOG_PREFIX} EMG-Streaming stopped\n")
         raise
@@ -106,7 +106,7 @@ async def _acc_stream_loop(
                 acc_delay.add(age_ms, ts_ms=send_ts_ms)
                 acc_sensor_delay.add(age_ms, ts_ms=send_ts_ms)
 
-                await send_bytes(sample.SerializeToString())
+                await send_bytes(payload)
     except asyncio.CancelledError:
         sys.stdout.write(f"{LOG_PREFIX} Accel-Streaming stopped\n")
         raise
@@ -155,7 +155,7 @@ async def _fusion_stream_loop(
             # Track bandwidth usage
             payload = sample.SerializeToString()
             tracker.add(len(payload))
-            
+
             send_ts = now_ms()
             fusion_jitter.add(send_ts)
 
@@ -163,7 +163,7 @@ async def _fusion_stream_loop(
             # sample.ts_ms = window_end aus FusionManager
             age_ms = send_ts - sample.ts_ms
             fusion_delay.add(age_ms, ts_ms=send_ts)
-            await send_bytes(sample.SerializeToString())
+            await send_bytes(payload)
     finally:
         await broadcaster.unsubscribe(q)
         #fusion_jitter._log_jitter_summary()
