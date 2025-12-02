@@ -38,7 +38,7 @@ async def _emg_stream_loop(
         name="EMG_SENSOR_HAL_DELAY",
         log_file=SENSOR_METRICS_LOG_FILE,
     )
-    tracker = BandwidthTracker("EMG-HAL->App", log_interval_s=5.0)
+    tracker = BandwidthTracker("EMG-HAL->App", log_interval_s=20.0)
     q: asyncio.Queue = await broadcaster.subscribe()
     try:
         while True:
@@ -86,7 +86,7 @@ async def _acc_stream_loop(
         name="ACC_SENSOR_HAL_DELAY",
         log_file=SENSOR_METRICS_LOG_FILE,
     )
-    tracker = BandwidthTracker("ACC-HAL->App", log_interval_s=5.0)
+    tracker = BandwidthTracker("ACC-HAL->App", log_interval_s=20.0)
     q: asyncio.Queue = await broadcaster.subscribe()
     try:
         while True:
@@ -141,7 +141,7 @@ async def _fusion_stream_loop(
     fusion_delay = DelayTracker(name="FUSION_HAL_DELAY")  # delay tracker for outgoing Fusion stream
 
     q: asyncio.Queue = await broadcaster.subscribe()
-    tracker = BandwidthTracker("FUSION-HAL->App", log_interval_s=5.0)
+    tracker = BandwidthTracker("FUSION-HAL->App", log_interval_s=20.0)
     try:
         while True:
             sample: fusion_pb2.FusedSample = await q.get()
