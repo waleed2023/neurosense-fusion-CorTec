@@ -15,7 +15,7 @@ GRPC_HOST = os.getenv("GRPC_HOST", "0.0.0.0")
 GRPC_PORT = int(os.getenv("GRPC_PORT", "50051"))
 
 # Streaming / Backpressure
-CLIENT_QUEUE_MAX = int(os.getenv("CLIENT_QUEUE_MAX", "512"))  # max Samples pro Client
+CLIENT_QUEUE_MAX = int(os.getenv("CLIENT_QUEUE_MAX", "1024"))  # max Samples pro Client
 DROP_OLDEST_ON_FULL = os.getenv("DROP_OLDEST_ON_FULL", "1") not in ("0", "false", "False") # default: drop oldest
 
 
@@ -42,18 +42,18 @@ MAX_SAMPLES_PER_PACKET_EMG = int(os.getenv("MAX_SAMPLES_PER_PACKET", "64"))  # m
 MAX_WAIT_S_EMG = float(os.getenv("MAX_WAIT_S", "0.02"))  # max wait time to gather more samples into one packet
 MAX_SAMPLES_PER_PACKET_ACCEL = int(os.getenv("MAX_SAMPLES_PER_PACKET_ACCEL", "128"))
 MAX_WAIT_S_ACCEL = float(os.getenv("MAX_WAIT_S_ACCEL", "0.02"))
-MAX_SAMPLES_PER_PACKET_FUSION = int(os.getenv("MAX_SAMPLES_PER_PACKET_FUSION", "32"))
-MAX_WAIT_S_FUSION = float(os.getenv("MAX_WAIT_S_FUSION", "0.05"))
+MAX_SAMPLES_PER_PACKET_FUSION = int(os.getenv("MAX_SAMPLES_PER_PACKET_FUSION", "50"))
+MAX_WAIT_S_FUSION = float(os.getenv("MAX_WAIT_S_FUSION", "0.02"))
 
 # ===== Fusion =====
-WINDOW_MS = int(os.getenv("FUSION_WINDOW_MS", "400"))  # time window for fusion in ms
-STEP_MS = int(os.getenv("FUSION_STEP_MS", "10"))      # step size for fusion in ms, define 1 -> 1kHz output, 10 -> 100Hz output
+WINDOW_MS = int(os.getenv("FUSION_WINDOW_MS", "200"))  # time window for fusion in ms
+STEP_MS = int(os.getenv("FUSION_STEP_MS", "1"))      # step size for fusion in ms, define 1 -> 1kHz output, 10 -> 100Hz output
 MAX_DELAY_MS = int(os.getenv("FUSION_MAX_DELAY_MS", "100"))  # 100 ms max allowed delay between EMG and ACC samples, defines the lookback window into historical data
 
 # ===== max rates =====
 MAX_RATE_HZ_ACC = int(os.getenv("FUSION_MAX_RATE_HZ", "800")) 
 MAX_RATE_HZ_EMG = int(os.getenv("FUSION_MAX_RATE_HZ_EMG", "100"))
-MAX_RATE_HZ_FUSION = int(os.getenv("FUSION_MAX_RATE_HZ_FUSION", "1000"))
+MAX_RATE_HZ_FUSION = int(os.getenv("FUSION_MAX_RATE_HZ_FUSION", "200")) # max output rate of fused samples to tablet
 
 
 # UUIDs
