@@ -74,10 +74,28 @@ class FusionManager:
             nominal_period_ms=acc_nominal_ms,
             name="ACC@FUSION",
         )
-        self._fusion_pipeline_dealy = DelayTracker(name="FUSION_PIPELINE_DELAY")  # delay Eintriff -> Ausgabe
-        fusion_nominal_ms = 1000.0 / float(MAX_RATE_HZ_FUSION)
-        self._fusion_pipeline_jitter = JitterTracker(nominal_period_ms=fusion_nominal_ms, name="FUSION_PIPELINE_JITTER")
+        # --- letzte Sensor-Eingangszeiten für dieses Fenster ---
+        self._last_emg_input_ts: Optional[int] = None
+        self._last_acc_input_ts: Optional[int] = None
 
+        # --- Pipeline-Delay & -Jitter: Sensor-Eingang -> fertig fusioniert ---
+        fusion_nominal_ms = 1000.0 / float(MAX_RATE_HZ_FUSION)
+
+        self._emg_to_fusion_delay = DelayTracker(
+            name="EMG_TO_FUSION_DELAY",
+        )
+        self._emg_to_fusion_jitter = JitterTracker(
+            nominal_period_ms=fusion_nominal_ms,
+            name="EMG_TO_FUSION_JITTER",
+        )
+
+        self._acc_to_fusion_delay = DelayTracker(
+            name="ACC_TO_FUSION_DELAY",
+        )
+        self._acc_to_fusion_jitter = JitterTracker(
+            nominal_period_ms=fusion_nominal_ms,
+            name="ACC_TO_FUSION_JITTER",
+        )
 
     # --------------------------------------------------------------------- #
     # Lifecycle
@@ -171,6 +189,7 @@ class FusionManager:
                         ready_emg = [s for s in emg_buf if s.ts_ms <= win_end]
                         if ready_emg:
                             emg_buf = [s for s in emg_buf if s.ts_ms > win_end]
+                            self._last_emg_input_ts = max(s.ts_ms for s in ready_emg) # for jitter measurement
                             for s in ready_emg:
                                 self._emg_rms_win.add_sample(s.ts_ms, float(s.value))
 
@@ -179,6 +198,7 @@ class FusionManager:
                         ready_acc = [s for s in acc_buf if s.ts_ms <= win_end]
                         if ready_acc:
                             acc_buf = [s for s in acc_buf if s.ts_ms > win_end]
+                            self._last_acc_input_ts = max(s.ts_ms for s in ready_acc)# for jitter measurement
                             for s in ready_acc:
                                 mag_abs = float(abs(s.mag))
                                 self._acc_mag_win.add_sample(s.ts_ms, mag_abs)
@@ -188,13 +208,22 @@ class FusionManager:
                     self._acc_mag_win.drop_older_than(win_start)
 
                     # ---- Compute FusedSample from online stats ----
-                    fused = self._compute_fused_sample(ts_ms=win_end)
+                    fused, emg_has_new, acc_has_new = self._compute_fused_sample(ts_ms=win_end)
                     if fused is not None:
+                        # Zeitpunkt, wann dieses FusedSample wirklich fertig ist
                         fusion_done_ts = now_ms()
-                        # how old the window end is at the time of fusion output
-                        age_ms = fusion_done_ts - win_end
-                        self._fusion_pipeline_jitter.add(fusion_done_ts) # jitter measurement
-                        self._fusion_pipeline_dealy.add(age_ms, ts_ms=fusion_done_ts)
+
+                        # ----- EMG → Fusion-Output: Delay + Jitter -----
+                        if emg_has_new and self._last_emg_input_ts is not None:
+                            age_emg_ms = fusion_done_ts - self._last_emg_input_ts
+                            self._emg_to_fusion_delay.add(age_emg_ms, ts_ms=fusion_done_ts)
+                            self._emg_to_fusion_jitter.add(fusion_done_ts)
+
+                        # ----- ACC → Fusion-Output: Delay + Jitter -----
+                        if acc_has_new and self._last_acc_input_ts is not None:
+                            age_acc_ms = fusion_done_ts - self._last_acc_input_ts
+                            self._acc_to_fusion_delay.add(age_acc_ms, ts_ms=fusion_done_ts)
+                            self._acc_to_fusion_jitter.add(fusion_done_ts)
                         await self._fusion_b.publish(fused)
 
 
@@ -277,7 +306,7 @@ class FusionManager:
         # ------------- Sequence + output -------------
         self._seq += 1
 
-        return fusion_pb2.FusedSample(
+        fused =  fusion_pb2.FusedSample(
             ts_ms=ts_ms,
             seq=self._seq,
             emg_level=emg_level,
@@ -288,3 +317,4 @@ class FusionManager:
             acc_valid=acc_valid,
             acc_count=acc_count,
         )
+        return fused, emg_has_new, acc_has_new
