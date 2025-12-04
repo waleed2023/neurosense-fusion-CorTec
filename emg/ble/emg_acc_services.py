@@ -35,10 +35,7 @@ async def _emg_stream_loop(
     loop = asyncio.get_running_loop()
     emg_jitter = JitterTracker(nominal_period_ms=1000.0 / float(req.max_rate_hz), name="EMG_HAL_OUT")  # jitter tracker for outgoing EMG stream
     emg_delay = DelayTracker(name="EMG_HAL_DELAY")  # delay tracker for outgoing EMG stream
-    emg_sensor_delay = DelayTracker(
-        name="EMG_SENSOR_HAL_DELAY",
-        log_file=SENSOR_METRICS_LOG_FILE,
-    )
+
     tracker = BandwidthTracker("EMG-HAL->App", log_interval_s=20.0)
     q: asyncio.Queue = await broadcaster.subscribe()
     try:
@@ -56,8 +53,6 @@ async def _emg_stream_loop(
                 emg_jitter.add(send_ts_ms)
                 age_ms = send_ts_ms - sample.ts_ms
                 emg_delay.add(age_ms, ts_ms=send_ts_ms)
-                emg_sensor_delay.add(age_ms, ts_ms=send_ts_ms)
-
                 await send_bytes(payload)
     except asyncio.CancelledError:
         sys.stdout.write(f"{LOG_PREFIX} EMG-Streaming stopped\n")
@@ -83,10 +78,6 @@ async def _acc_stream_loop(
     loop = asyncio.get_running_loop()
     acc_jitter = JitterTracker(nominal_period_ms=1000.0 / float(req.max_rate_hz), name="ACC_HAL_OUT")  # jitter tracker for outgoing Accel stream
     acc_delay = DelayTracker(name="ACC_HAL_DELAY")  # delay tracker for outgoing Accel stream
-    acc_sensor_delay = DelayTracker(
-        name="ACC_SENSOR_HAL_DELAY",
-        log_file=SENSOR_METRICS_LOG_FILE,
-    )
     tracker = BandwidthTracker("ACC-HAL->App", log_interval_s=20.0)
     q: asyncio.Queue = await broadcaster.subscribe()
     try:
@@ -105,8 +96,6 @@ async def _acc_stream_loop(
                 acc_jitter.add(send_ts_ms)
                 age_ms = send_ts_ms - sample.ts_ms
                 acc_delay.add(age_ms, ts_ms=send_ts_ms)
-                acc_sensor_delay.add(age_ms, ts_ms=send_ts_ms)
-
                 await send_bytes(payload)
     except asyncio.CancelledError:
         sys.stdout.write(f"{LOG_PREFIX} Accel-Streaming stopped\n")

@@ -8,7 +8,9 @@ from emg.measurment.jitter_tracker import JitterTracker
 from emg.fusion.rms_mag import OnlineRMSWindow, OnlineMagWindow
 from emg.broadcaster import Broadcaster
 from emg.proto import emg_pb2, fusion_pb2
-from emg.config import WINDOW_MS, STEP_MS, MAX_DELAY_MS, MAX_RATE_HZ_EMG, MAX_RATE_HZ_ACC
+from emg.measurment.delay_tracker import DelayTracker
+from emg.measurment.jitter_tracker import JitterTracker
+from emg.config import WINDOW_MS, STEP_MS, MAX_DELAY_MS, MAX_RATE_HZ_EMG, MAX_RATE_HZ_ACC, MAX_RATE_HZ_FUSION, LOG_PREFIX
 
 
 def now_ms() -> int:
@@ -72,7 +74,10 @@ class FusionManager:
             nominal_period_ms=acc_nominal_ms,
             name="ACC@FUSION",
         )
-        
+        self._fusion_pipeline_dealy = DelayTracker(name="FUSION_PIPELINE_DELAY")  # delay Eintriff -> Ausgabe
+        fusion_nominal_ms = 1000.0 / float(MAX_RATE_HZ_FUSION)
+        self._fusion_pipeline_jitter = JitterTracker(nominal_period_ms=fusion_nominal_ms, name="FUSION_PIPELINE_JITTER")
+
 
     # --------------------------------------------------------------------- #
     # Lifecycle
@@ -185,6 +190,11 @@ class FusionManager:
                     # ---- Compute FusedSample from online stats ----
                     fused = self._compute_fused_sample(ts_ms=win_end)
                     if fused is not None:
+                        fusion_done_ts = now_ms()
+                        # how old the window end is at the time of fusion output
+                        age_ms = fusion_done_ts - win_end
+                        self._fusion_pipeline_jitter.add(fusion_done_ts) # jitter measurement
+                        self._fusion_pipeline_dealy.add(age_ms, ts_ms=fusion_done_ts)
                         await self._fusion_b.publish(fused)
 
 
