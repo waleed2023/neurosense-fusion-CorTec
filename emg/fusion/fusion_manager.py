@@ -2,7 +2,7 @@
 
 import asyncio
 import time
-from typing import Optional, List
+from typing import Optional, List, Tuple
 from emg.measurment.jitter_tracker import JitterTracker
 
 from emg.fusion.rms_mag import OnlineRMSWindow, OnlineMagWindow
@@ -245,7 +245,7 @@ class FusionManager:
         self,
         *,
         ts_ms: int,
-    ):
+    ) -> Tuple[Optional[fusion_pb2.FusedSample], bool, bool]:
         """
         Compute window-based features for EMG and ACC using the online windows.
 
