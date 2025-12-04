@@ -245,7 +245,7 @@ class FusionManager:
         self,
         *,
         ts_ms: int,
-    ) -> Optional[fusion_pb2.FusedSample]:
+    ):
         """
         Compute window-based features for EMG and ACC using the online windows.
 
@@ -301,7 +301,7 @@ class FusionManager:
 
         # ------------- Fusion gating -------------
         if not emg_valid or not acc_valid:
-            return None
+            return None, emg_has_new, acc_has_new
 
         # ------------- Sequence + output -------------
         self._seq += 1
