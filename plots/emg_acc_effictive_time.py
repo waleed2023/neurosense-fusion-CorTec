@@ -12,7 +12,7 @@ with open(FN, newline="", encoding="utf-8") as f:
         kind, name = row[0], row[1]
         if kind != "jitter":
             continue
-        if name != "EMG_SENSOR":
+        if name != "ACC_SENSOR":
             continue
 
         ts_ms = float(row[3])  # Spalte ts_ms
