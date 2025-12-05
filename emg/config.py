@@ -23,7 +23,7 @@ DROP_OLDEST_ON_FULL = os.getenv("DROP_OLDEST_ON_FULL", "1") not in ("0", "false"
 # ===== I2C / ACCEL (LSM6DSx) =====
 I2C_BUS = int(os.getenv("I2C_BUS", "1"))
 I2C_ADDR = int(os.getenv("I2C_ADDR", "0x6B"), 16)
-ACCEL_ODR_HZ = float(os.getenv("ACCEL_ODR_HZ", "833"))  # Poll-Rate, options: 12.5, 26, 52, 104, 208, 416, 833, 1660
+ACCEL_ODR_HZ = float(os.getenv("ACCEL_ODR_HZ", "1660"))  # Poll-Rate, options: 12.5, 26, 52, 104, 208, 416, 833, 1660
 ACCEL_FS_G = int(os.getenv("ACCEL_FS_G", "2")) # scale ±2g, ±4g, ±8g, ±16g, depending on case
 LOG_PREFIX = os.getenv("LOG_PREFIX", "[emg]") # Prefix for log messages
 
@@ -51,7 +51,7 @@ STEP_MS = int(os.getenv("FUSION_STEP_MS", "1"))      # step size for fusion in m
 MAX_DELAY_MS = int(os.getenv("FUSION_MAX_DELAY_MS", "10"))  # 100 ms max allowed delay between EMG and ACC samples, defines the lookback window into historical data
 
 # ===== max rates =====
-MAX_RATE_HZ_ACC = int(os.getenv("FUSION_MAX_RATE_HZ", "800")) 
+MAX_RATE_HZ_ACC = int(os.getenv("FUSION_MAX_RATE_HZ", "1000")) 
 MAX_RATE_HZ_EMG = int(os.getenv("FUSION_MAX_RATE_HZ_EMG", "100"))
 MAX_RATE_HZ_FUSION = int(os.getenv("FUSION_MAX_RATE_HZ_FUSION", "100")) # max output rate of fused samples to tablet
 
