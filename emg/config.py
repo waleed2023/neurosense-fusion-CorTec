@@ -51,7 +51,7 @@ STEP_MS = int(os.getenv("FUSION_STEP_MS", "1"))      # step size for fusion in m
 MAX_DELAY_MS = int(os.getenv("FUSION_MAX_DELAY_MS", "10"))  # 100 ms max allowed delay between EMG and ACC samples, defines the lookback window into historical data
 
 # ===== max rates =====
-MAX_RATE_HZ_ACC = int(os.getenv("FUSION_MAX_RATE_HZ", "833")) 
+MAX_RATE_HZ_ACC = int(os.getenv("FUSION_MAX_RATE_HZ", "100")) 
 MAX_RATE_HZ_EMG = int(os.getenv("FUSION_MAX_RATE_HZ_EMG", "100"))
 MAX_RATE_HZ_FUSION = int(os.getenv("FUSION_MAX_RATE_HZ_FUSION", "100")) # max output rate of fused samples to tablet
 
