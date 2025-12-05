@@ -24,4 +24,4 @@ else:
     duration_ms = ts[-1] - ts[0]          # Messdauer
     n_intervals = len(ts) - 1             # N-1 Intervalle
     rate_hz = n_intervals * 1000.0 / duration_ms
-    print(f"Effektive EMG Sensor -> Pi Rate: {rate_hz:.2f} Hz")
+    print(f"Effektive ACC Sensor -> Pi Rate: {rate_hz:.2f} Hz")
