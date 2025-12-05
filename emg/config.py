@@ -53,7 +53,7 @@ MAX_DELAY_MS = int(os.getenv("FUSION_MAX_DELAY_MS", "100"))  # 100 ms max allowe
 # ===== max rates =====
 MAX_RATE_HZ_ACC = int(os.getenv("FUSION_MAX_RATE_HZ", "800")) 
 MAX_RATE_HZ_EMG = int(os.getenv("FUSION_MAX_RATE_HZ_EMG", "100"))
-MAX_RATE_HZ_FUSION = int(os.getenv("FUSION_MAX_RATE_HZ_FUSION", "100")) # max output rate of fused samples to tablet
+MAX_RATE_HZ_FUSION = int(os.getenv("FUSION_MAX_RATE_HZ_FUSION", "1000")) # max output rate of fused samples to tablet
 
 
 # UUIDs
