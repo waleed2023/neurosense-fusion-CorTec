@@ -46,7 +46,7 @@ MAX_SAMPLES_PER_PACKET_FUSION = int(os.getenv("MAX_SAMPLES_PER_PACKET_FUSION", "
 MAX_WAIT_S_FUSION = float(os.getenv("MAX_WAIT_S_FUSION", "0.02"))
 
 # ===== Fusion =====
-WINDOW_MS = int(os.getenv("FUSION_WINDOW_MS", "100"))  # time window for fusion in ms
+WINDOW_MS = int(os.getenv("FUSION_WINDOW_MS", "500"))  # time window for fusion in ms
 STEP_MS = int(os.getenv("FUSION_STEP_MS", "1"))      # step size for fusion in ms, define 1 -> 1kHz output, 10 -> 100Hz output
 MAX_DELAY_MS = int(os.getenv("FUSION_MAX_DELAY_MS", "100"))  # 100 ms max allowed delay between EMG and ACC samples, defines the lookback window into historical data
 
