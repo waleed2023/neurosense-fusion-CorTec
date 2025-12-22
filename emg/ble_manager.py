@@ -4,7 +4,17 @@ import struct
 import asyncio
 from typing import Optional
 from bleak import BleakClient, BleakScanner
-from .config import ANALOG_CHAR, BATTERY_CHAR, TARGET_MAC, TARGET_NAME, VALUE_MAX, LOG_PREFIX, EMG_IDLE_TIMEOUT_MS, SENSOR_METRICS_LOG_FILE, MAX_RATE_HZ_EMG
+from .config import (
+    ANALOG_CHAR,
+    BATTERY_CHAR,
+    TARGET_MAC,
+    TARGET_NAME,
+    VALUE_MAX,
+    LOG_PREFIX,
+    EMG_IDLE_TIMEOUT_MS,
+    SENSOR_METRICS_LOG_FILE,
+    MAX_RATE_HZ_EMG,
+)
 from .proto import emg_pb2
 from dbus_next.aio import MessageBus
 from dbus_next import Variant, BusType
@@ -12,27 +22,40 @@ from .measurment.jitter_tracker import JitterTracker
 import os
 import random
 
+
 def now_ms() -> int:
     return int(time.time() * 1000)
 
 
 
+EMG_RX_QUEUE_MAX = 2048
+EMG_RX_DROP_OLDEST_ON_FULL = True
+
 class BLEManager:
     """
     read EMG Values via BLE (Bleak) and publish EmgSample to the Broadcaster.
     """
+
     def __init__(self, broadcaster):
         self.broadcaster = broadcaster
         self._client: Optional[BleakClient] = None
         self._battery: int = 255
         self._stop = asyncio.Event()
+
         # cache for resolved MAC; once we know it, we don't scan again
         self._resolved_mac: Optional[str] = TARGET_MAC or None
         # cache for last EMG timestamp, used for reconnect on idle
         self._last_emg_ms = 0
         self._idle_timeout_ms = EMG_IDLE_TIMEOUT_MS  # default 5s
-        
-        # jitter tracker for Sensor -> HAL        
+
+        # ---: queue + worker state ---
+        self._emg_rx_q: asyncio.Queue[emg_pb2.EmgSample] = asyncio.Queue(
+            maxsize=EMG_RX_QUEUE_MAX
+        )
+        self._loop: Optional[asyncio.AbstractEventLoop] = None
+        self._publisher_task: Optional[asyncio.Task] = None
+
+        # jitter tracker for Sensor -> HAL
         nominal_ms = 0.0
         if MAX_RATE_HZ_EMG > 0:
             nominal_ms = 1000.0 / float(MAX_RATE_HZ_EMG)
@@ -45,13 +68,16 @@ class BLEManager:
 
     async def stop(self):
         self._stop.set()
+
+        # ---: stop publisher worker ---
+        if self._publisher_task and not self._publisher_task.done():
+            self._publisher_task.cancel()
+
         try:
             if self._client and self._client.is_connected:
                 await self._client.disconnect()
         except Exception:
             sys.stderr.write(f"{LOG_PREFIX} BLEManager stop error\n")
-            pass
-
 
     async def _resolve_mac(self, timeout: float = 3.0) -> Optional[str]:
         """
@@ -59,19 +85,14 @@ class BLEManager:
         - if TARGET_MAC is configured or already cached, use it directly (no scan)
         - otherwise scan once by name and cache the result
         """
-        # this is the max time we wait for a scan
-        # set it after trying default parameter to avoid mypy error
-        # already cached → no scan
         if self._resolved_mac:
             return self._resolved_mac
 
-        # env/config given → just use it and remember
         if TARGET_MAC:
             self._resolved_mac = TARGET_MAC
             sys.stdout.write(f"{LOG_PREFIX} using configured MAC {self._resolved_mac}\n")
             return self._resolved_mac
 
-        # no MAC known yet → one short scan by name
         sys.stdout.write(f"{LOG_PREFIX} scanning for '{TARGET_NAME}' ...\n")
         devs = await BleakScanner.discover(timeout=timeout)
         target_lower = TARGET_NAME.lower()
@@ -80,7 +101,9 @@ class BLEManager:
             name = (dev.name or "").lower()
             if target_lower in name:
                 self._resolved_mac = dev.address
-                sys.stdout.write(f"{LOG_PREFIX} found {TARGET_NAME} at {self._resolved_mac}\n")
+                sys.stdout.write(
+                    f"{LOG_PREFIX} found {TARGET_NAME} at {self._resolved_mac}\n"
+                )
                 break
 
         if not self._resolved_mac:
@@ -88,15 +111,49 @@ class BLEManager:
 
         return self._resolved_mac
 
+    # ---: enqueue helper (bounded; optional drop policy) ---
+    def _try_enqueue_emg(self, sample: emg_pb2.EmgSample) -> None:
+        try:
+            self._emg_rx_q.put_nowait(sample)
+        except asyncio.QueueFull:
+            if EMG_RX_DROP_OLDEST_ON_FULL:
+                try:
+                    _ = self._emg_rx_q.get_nowait()  # drop one oldest
+                except asyncio.QueueEmpty:
+                    return
+                try:
+                    self._emg_rx_q.put_nowait(sample)
+                except asyncio.QueueFull:
+                    return
+            # else: dropest (do nothing)
+
+    # ---: single publisher worker (prevents task build-up) ---
+    async def _publisher_worker(self) -> None:
+        while not self._stop.is_set():
+            try:
+                sample = await asyncio.wait_for(self._emg_rx_q.get(), timeout=0.5)
+            except asyncio.TimeoutError:
+                continue
+
+            try:
+                await self.broadcaster.publish(sample)
+            except Exception as e:
+                sys.stderr.write(f"{LOG_PREFIX} EMG publish error: {e}\n")
+            finally:
+                try:
+                    self._emg_rx_q.task_done()
+                except Exception:
+                    pass
+
     def _on_emg(self, _handle: int, data: bytearray):
         try:
             if len(data) < 2:
                 return
+
             v = struct.unpack_from("<H", data, 0)[0]
             if v > VALUE_MAX:
                 v = VALUE_MAX
 
-            # get current timestamp once and use it everywhere
             now = now_ms()
             self._last_emg_ms = now
 
@@ -105,19 +162,27 @@ class BLEManager:
                 ts_ms=now,
                 battery=self._battery,
             )
-            asyncio.get_event_loop().create_task(
-                self.broadcaster.publish(sample)
-            )
+
+            # --- CHANGED: no create_task per sample; enqueue instead ---
+            if self._loop is not None:
+                # safe even if callback isn't on the event-loop thread
+                self._loop.call_soon_threadsafe(self._try_enqueue_emg, sample)
+            else:
+                self._try_enqueue_emg(sample)
+
             # Jitter measurement Sensor -> PC
             self._sensor_jitter.add(now)
 
         except Exception as e:
             sys.stderr.write(f"{LOG_PREFIX} on_emg error: {e}\n")
 
-
-    
     async def run(self):
-        backoff = 1.0 # for reconnect device
+        # ---: capture loop + start one worker once ---
+        self._loop = asyncio.get_running_loop()
+        if not self._publisher_task or self._publisher_task.done():
+            self._publisher_task = asyncio.create_task(self._publisher_worker())
+
+        backoff = 1.0  # for reconnect device
         while not self._stop.is_set():
             try:
                 mac = await self._resolve_mac()
@@ -138,24 +203,26 @@ class BLEManager:
                         sys.stdout.write(f"{LOG_PREFIX} Battery {self._battery}%\n")
                     except Exception:
                         sys.stderr.write(f"{LOG_PREFIX} Battery read error\n")
-                        pass
 
                     await client.start_notify(ANALOG_CHAR, self._on_emg)
                     sys.stdout.write(f"{LOG_PREFIX} EMG Notify active\n")
                     backoff = 1.0
                     self._last_emg_ms = now_ms()
+
                     while client.is_connected and not self._stop.is_set():
                         await asyncio.sleep(0.5)
                         if self._idle_timeout_ms > 0 and self._last_emg_ms:
                             if (now_ms() - self._last_emg_ms) > self._idle_timeout_ms:
-                                sys.stdout.write(f"{LOG_PREFIX} no EMG for {self._idle_timeout_ms}ms → reconnect\n")
-                                await client.disconnect()   # breaks loop; outer while will retry
+                                sys.stdout.write(
+                                    f"{LOG_PREFIX} no EMG for {self._idle_timeout_ms}ms → reconnect\n"
+                                )
+                                await client.disconnect()
                                 break
+
                     try:
                         await client.stop_notify(ANALOG_CHAR)
                     except Exception:
                         sys.stderr.write(f"{LOG_PREFIX} EMG Notify stop error\n")
-                        pass
 
             except asyncio.CancelledError:
                 sys.stdout.write(f"{LOG_PREFIX} BLE: Cancelled\n")
@@ -166,3 +233,8 @@ class BLEManager:
                 backoff = min(backoff * 2, 10)
             finally:
                 self._client = None
+
+        # ---: cleanup worker on exit ---
+        if self._publisher_task and not self._publisher_task.done():
+            self._publisher_task.cancel()
+        
