@@ -31,6 +31,8 @@ def now_ms() -> int:
 EMG_RX_QUEUE_MAX = 2048
 EMG_RX_DROP_OLDEST_ON_FULL = True
 
+
+# --------------------- BLEManager ---------------------
 class BLEManager:
     """
     read EMG Values via BLE (Bleak) and publish EmgSample to the Broadcaster.
@@ -48,7 +50,7 @@ class BLEManager:
         self._last_emg_ms = 0
         self._idle_timeout_ms = EMG_IDLE_TIMEOUT_MS  # default 5s
 
-        # ---: queue + worker state ---
+        # queue + worker state
         self._emg_rx_q: asyncio.Queue[emg_pb2.EmgSample] = asyncio.Queue(
             maxsize=EMG_RX_QUEUE_MAX
         )
@@ -69,7 +71,7 @@ class BLEManager:
     async def stop(self):
         self._stop.set()
 
-        # ---: stop publisher worker ---
+        # --- stop publisher worker ---
         if self._publisher_task and not self._publisher_task.done():
             self._publisher_task.cancel()
 
@@ -111,7 +113,7 @@ class BLEManager:
 
         return self._resolved_mac
 
-    # ---: enqueue helper (bounded; optional drop policy) ---
+    # --- enqueue helper (bounded; optional drop policy) ---
     def _try_enqueue_emg(self, sample: emg_pb2.EmgSample) -> None:
         try:
             self._emg_rx_q.put_nowait(sample)
@@ -127,7 +129,7 @@ class BLEManager:
                     return
             # else: dropest (do nothing)
 
-    # ---: single publisher worker (prevents task build-up) ---
+    # --- single publisher worker (prevents task build-up) ---
     async def _publisher_worker(self) -> None:
         while not self._stop.is_set():
             try:
@@ -177,7 +179,7 @@ class BLEManager:
             sys.stderr.write(f"{LOG_PREFIX} on_emg error: {e}\n")
 
     async def run(self):
-        # ---: capture loop + start one worker once ---
+        # --- capture loop + start one worker once ---
         self._loop = asyncio.get_running_loop()
         if not self._publisher_task or self._publisher_task.done():
             self._publisher_task = asyncio.create_task(self._publisher_worker())
@@ -234,7 +236,7 @@ class BLEManager:
             finally:
                 self._client = None
 
-        # ---: cleanup worker on exit ---
+        # --- cleanup worker on exit ---
         if self._publisher_task and not self._publisher_task.done():
             self._publisher_task.cancel()
         
