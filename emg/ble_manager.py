@@ -18,7 +18,7 @@ from .config import (
 from .proto import emg_pb2
 from dbus_next.aio import MessageBus
 from dbus_next import Variant, BusType
-from .measurment.jitter_tracker import JitterTracker
+from emg.measurment.timing_mark_logger import TimingMarkLogger
 import os
 import random
 
@@ -50,23 +50,19 @@ class BLEManager:
         self._last_emg_ms = 0
         self._idle_timeout_ms = EMG_IDLE_TIMEOUT_MS  # default 5s
 
-        # queue + worker state
-        self._emg_rx_q: asyncio.Queue[emg_pb2.EmgSample] = asyncio.Queue(
+        # mark logger + hal counter (für ENTRY/OUT Paare)
+        self._marklog = TimingMarkLogger(log_file=SENSOR_METRICS_LOG_FILE)
+        self._hal_idx = 0
+
+        # queue + worker state (wir speichern (idx, sample), damit OUT zum ENTRY passt)
+        self._emg_rx_q: asyncio.Queue[tuple[int, emg_pb2.EmgSample]] = asyncio.Queue(
             maxsize=EMG_RX_QUEUE_MAX
         )
         self._loop: Optional[asyncio.AbstractEventLoop] = None
         self._publisher_task: Optional[asyncio.Task] = None
 
-        # jitter tracker for Sensor -> HAL
-        nominal_ms = 0.0
-        if MAX_RATE_HZ_EMG > 0:
-            nominal_ms = 1000.0 / float(MAX_RATE_HZ_EMG)
 
-        self._sensor_jitter = JitterTracker(
-            nominal_period_ms=nominal_ms,
-            name="EMG_SENSOR_Entry",
-            log_file=SENSOR_METRICS_LOG_FILE,
-        )
+
 
     async def stop(self):
         self._stop.set()
@@ -113,32 +109,34 @@ class BLEManager:
 
         return self._resolved_mac
 
-    # --- enqueue helper (bounded; optional drop policy) ---
-    def _try_enqueue_emg(self, sample: emg_pb2.EmgSample) -> None:
+    def _try_enqueue_emg(self, item: tuple[int, emg_pb2.EmgSample]) -> None:
         try:
-            self._emg_rx_q.put_nowait(sample)
+            self._emg_rx_q.put_nowait(item)
         except asyncio.QueueFull:
             if EMG_RX_DROP_OLDEST_ON_FULL:
                 try:
-                    _ = self._emg_rx_q.get_nowait()  # drop one oldest
+                    _ = self._emg_rx_q.get_nowait()  # drop one oldest (tuple)
                 except asyncio.QueueEmpty:
                     return
                 try:
-                    self._emg_rx_q.put_nowait(sample)
+                    self._emg_rx_q.put_nowait(item)
                 except asyncio.QueueFull:
                     return
-            # else: dropest (do nothing)
+            # else: drop newest (do nothing)
+
 
     # --- single publisher worker (prevents task build-up) ---
     async def _publisher_worker(self) -> None:
         while not self._stop.is_set():
             try:
-                sample = await asyncio.wait_for(self._emg_rx_q.get(), timeout=0.5)
+                idx, sample = await asyncio.wait_for(self._emg_rx_q.get(), timeout=0.5)
+
             except asyncio.TimeoutError:
                 continue
 
             try:
                 await self.broadcaster.publish(sample)
+                self._marklog.mark("EMG_HAL_OUT", idx, now_ms())
             except Exception as e:
                 sys.stderr.write(f"{LOG_PREFIX} EMG publish error: {e}\n")
             finally:
@@ -146,6 +144,7 @@ class BLEManager:
                     self._emg_rx_q.task_done()
                 except Exception:
                     pass
+
 
     def _on_emg(self, _handle: int, data: bytearray):
         try:
@@ -157,6 +156,9 @@ class BLEManager:
                 v = VALUE_MAX
 
             now = now_ms()
+            self._hal_idx += 1
+            idx = self._hal_idx
+            self._marklog.mark("EMG_HAL_ENTRY", idx, now)
             self._last_emg_ms = now
 
             sample = emg_pb2.EmgSample(
@@ -168,12 +170,9 @@ class BLEManager:
             # --- CHANGED: no create_task per sample; enqueue instead ---
             if self._loop is not None:
                 # safe even if callback isn't on the event-loop thread
-                self._loop.call_soon_threadsafe(self._try_enqueue_emg, sample)
+                self._loop.call_soon_threadsafe(self._try_enqueue_emg, (idx, sample))
             else:
-                self._try_enqueue_emg(sample)
-
-            # Jitter measurement Sensor -> PC
-            self._sensor_jitter.add(now)
+                self._try_enqueue_emg((idx, sample))
 
         except Exception as e:
             sys.stderr.write(f"{LOG_PREFIX} on_emg error: {e}\n")

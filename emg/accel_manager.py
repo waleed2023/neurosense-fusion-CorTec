@@ -12,6 +12,7 @@ from .config import (
     REG_CTRL1_XL, REG_CTRL2_G, REG_CTRL3_C, REG_WHO_AM_I, OUTX_L_XL, SENSOR_METRICS_LOG_FILE,
 )
 from .proto import emg_pb2
+from emg.measurment.timing_mark_logger import TimingMarkLogger
 
 
 # LSM6DSx Register Map
@@ -41,13 +42,8 @@ class AccelManager:
         self._stop = asyncio.Event()
         self._bus: Optional[SMBus] = None
 
-        # jitter tracker for Sensor -> HAL
-        nominal_ms = 1000.0 / max(1.0, float(ACCEL_ODR_HZ))
-        self._sensor_jitter = JitterTracker(
-            nominal_period_ms=nominal_ms,
-            name="ACC_SENSOR_Entry",
-            log_file=SENSOR_METRICS_LOG_FILE,
-        )
+        self._marklog = TimingMarkLogger(log_file=SENSOR_METRICS_LOG_FILE)
+        self._hal_idx = 0
 
     async def stop(self):
         self._stop.set()
@@ -135,15 +131,25 @@ class AccelManager:
                         # 1) read sensor
                         AX, AY, AZ, MAG = self._read_accel_g(bus, I2C_ADDR)
 
+                        self._hal_idx += 1
+                        idx = self._hal_idx
+
+                        t_entry = int(time.time() * 1000)
+                        self._marklog.mark("ACC_HAL_ENTRY", idx, t_entry)
+
                         sample = emg_pb2.AccelSample(
                             ax=AX,
                             ay=AY,
                             az=AZ,
                             mag=MAG,
-                            ts_ms=int(time.time() * 1000),
+                            ts_ms=t_entry,
                         )
+
                         await self.broadcaster.publish(sample)
-                        self._sensor_jitter.add(sample.ts_ms) # jitter measurement Sensor -> HAL
+                        self._marklog.mark("ACC_HAL_OUT", idx, int(time.time() * 1000))
+
+                        self._sensor_jitter.add(sample.ts_ms)  # kannst du lassen
+
 
                         # 2) sleep to hit desired ODR
                         now = time.perf_counter()

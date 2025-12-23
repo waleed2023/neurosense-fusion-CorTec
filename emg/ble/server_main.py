@@ -30,6 +30,7 @@ async def main_async():
 
 
     bus = await MessageBus(bus_type=BusType.SYSTEM).connect()
+    # in case i would send RAW data too
     #emg_svc = build_emg_service(bus, emg_b)
     #acc_svc = build_acc_service(bus, acc_b)
     fusion_svc = build_fusion_service(bus, fusion_b)
