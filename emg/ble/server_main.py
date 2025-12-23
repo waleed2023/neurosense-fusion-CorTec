@@ -30,8 +30,8 @@ async def main_async():
 
 
     bus = await MessageBus(bus_type=BusType.SYSTEM).connect()
-    emg_svc = build_emg_service(bus, emg_b)
-    acc_svc = build_acc_service(bus, acc_b)
+    #emg_svc = build_emg_service(bus, emg_b)
+    #acc_svc = build_acc_service(bus, acc_b)
     fusion_svc = build_fusion_service(bus, fusion_b)
 
 
@@ -52,8 +52,9 @@ async def main_async():
             print("[emg] Hooks wired to EMG_RET (notify)")
             break
 
-
-    await app.run(bus, [emg_svc, acc_svc, fusion_svc])
+    # sending raw data and fusion
+    # await app.run(bus, [emg_svc, acc_svc, fusion_svc])
+    await app.run(bus, [fusion_svc])
 
 
     # 3) Sensor-Manager (start reading sensors and publishing to Broadcaster)
