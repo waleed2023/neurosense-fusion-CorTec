@@ -173,19 +173,6 @@ class FusionManager:
                     fused, emg_has_new, acc_has_new = self._compute_fused_sample(ts_ms=win_end)
                     if fused is not None:
                         # Zeitpunkt, wann dieses FusedSample wirklich fertig ist
-                        fusion_done_ts = now_ms()
-
-                        # ----- EMG → Fusion-Output: Delay + Jitter -----
-                        if emg_has_new and self._last_emg_input_ts is not None:
-                            age_emg_ms = fusion_done_ts - self._last_emg_input_ts
-                            self._emg_to_fusion_delay.add(age_emg_ms, ts_ms=fusion_done_ts)
-                            self._emg_to_fusion_jitter.add(fusion_done_ts)
-
-                        # ----- ACC → Fusion-Output: Delay + Jitter -----
-                        if acc_has_new and self._last_acc_input_ts is not None:
-                            age_acc_ms = fusion_done_ts - self._last_acc_input_ts
-                            self._acc_to_fusion_delay.add(age_acc_ms, ts_ms=fusion_done_ts)
-                            self._acc_to_fusion_jitter.add(fusion_done_ts)
                         await self._fusion_b.publish(fused)
 
 
