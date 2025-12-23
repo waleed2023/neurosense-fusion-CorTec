@@ -62,6 +62,10 @@ class JitterTracker:
         try:
             with open(self.log_file, "a", encoding="utf-8") as f:
                 # kind,name,idx,ts_ms,dt_ms,abs_dev_ms,delay_ms
+                # ts_ms zeitstempel des messpunkts
+                # dt_ms das ist interval zwischen diesem und dem vorherigen Timestamp. nur sinnvoll bei jitter.
+                # abs_dev_ms nur für jitter relevant. absloute abweichung vom nominalwert
+                # delay_ms nur bei delay relevant. der gemessene delay wert
                 f.write(
                     f"jitter,{self.name},{self._sample_idx},{ts_ms},"
                     f"{dt_ms:.3f},{abs_dev_ms:.3f},\n"

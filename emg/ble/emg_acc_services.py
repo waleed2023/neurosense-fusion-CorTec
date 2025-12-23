@@ -33,8 +33,8 @@ async def _emg_stream_loop(
     interval_s = 1.0 / max(1, req.max_rate_hz)
     last = 0.0
     loop = asyncio.get_running_loop()
-    emg_jitter = JitterTracker(nominal_period_ms=1000.0 / float(req.max_rate_hz), name="EMG_HAL_OUT")  # jitter tracker for outgoing EMG stream
-    emg_delay = DelayTracker(name="EMG_HAL_DELAY")  # delay tracker for outgoing EMG stream
+    emg_jitter = JitterTracker(nominal_period_ms=1000.0 / float(req.max_rate_hz), name="EMG_HAL_OUT", log_file=SENSOR_METRICS_LOG_FILE,)  # jitter tracker for outgoing EMG stream
+    emg_delay = DelayTracker(name="EMG_HAL_DELAY_OUT", log_file=SENSOR_METRICS_LOG_FILE,)  # delay tracker for outgoing EMG stream
 
     tracker = BandwidthTracker("EMG-HAL->App", log_interval_s=20.0)
     q: asyncio.Queue = await broadcaster.subscribe()
@@ -76,8 +76,8 @@ async def _acc_stream_loop(
     interval_s = 1.0 / max(1, req.max_rate_hz)
     last = 0.0
     loop = asyncio.get_running_loop()
-    acc_jitter = JitterTracker(nominal_period_ms=1000.0 / float(req.max_rate_hz), name="ACC_HAL_OUT")  # jitter tracker for outgoing Accel stream
-    acc_delay = DelayTracker(name="ACC_HAL_DELAY")  # delay tracker for outgoing Accel stream
+    acc_jitter = JitterTracker(nominal_period_ms=1000.0 / float(req.max_rate_hz), name="ACC_HAL_OUT", log_file=SENSOR_METRICS_LOG_FILE,)  # jitter tracker for outgoing Accel stream
+    acc_delay = DelayTracker(name="ACC_HAL_DELAY_OUT", log_file=SENSOR_METRICS_LOG_FILE,)  # delay tracker for outgoing Accel stream
     tracker = BandwidthTracker("ACC-HAL->App", log_interval_s=20.0)
     q: asyncio.Queue = await broadcaster.subscribe()
     try:

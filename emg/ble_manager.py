@@ -64,7 +64,7 @@ class BLEManager:
 
         self._sensor_jitter = JitterTracker(
             nominal_period_ms=nominal_ms,
-            name="EMG_SENSOR",
+            name="EMG_SENSOR_Entry",
             log_file=SENSOR_METRICS_LOG_FILE,
         )
 

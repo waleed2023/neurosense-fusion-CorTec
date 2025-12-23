@@ -62,18 +62,6 @@ class FusionManager:
         self._last_move_var: float = 0.0
         self._has_acc_level: bool = False
 
-        # ---jitter trackers---
-        emg_nominal_ms = 1000.0 / float(MAX_RATE_HZ_EMG)   # z.B. 100 ms
-        acc_nominal_ms = 1000.0 / float(MAX_RATE_HZ_ACC)   # z.B. ~1.25 ms bei 800 Hz
-
-        self._emg_jitter_at_fusion = JitterTracker(
-            nominal_period_ms=emg_nominal_ms,
-            name="EMG@FUSION",
-        )
-        self._acc_jitter_at_fusion = JitterTracker(
-            nominal_period_ms=acc_nominal_ms,
-            name="ACC@FUSION",
-        )
         # --- letzte Sensor-Eingangszeiten für dieses Fenster ---
         self._last_emg_input_ts: Optional[int] = None
         self._last_acc_input_ts: Optional[int] = None
@@ -163,10 +151,6 @@ class FusionManager:
                         acc_buf.append(s)
                 except asyncio.QueueEmpty:
                     pass
-
-                # --- 3) Reorder: sort by timestamp ---
-                #emg_buf.sort(key=lambda s: s.ts_ms)
-                #acc_buf.sort(key=lambda s: s.ts_ms)
 
                 now = now_ms()
 

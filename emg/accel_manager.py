@@ -45,7 +45,7 @@ class AccelManager:
         nominal_ms = 1000.0 / max(1.0, float(ACCEL_ODR_HZ))
         self._sensor_jitter = JitterTracker(
             nominal_period_ms=nominal_ms,
-            name="ACC_SENSOR",
+            name="ACC_SENSOR_Entry",
             log_file=SENSOR_METRICS_LOG_FILE,
         )
 
