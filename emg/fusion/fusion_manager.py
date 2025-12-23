@@ -3,13 +3,10 @@
 import asyncio
 import time
 from typing import Optional, List, Tuple
-from emg.measurment.jitter_tracker import JitterTracker
 
 from emg.fusion.rms_mag import OnlineRMSWindow, OnlineMagWindow
 from emg.broadcaster import Broadcaster
 from emg.proto import emg_pb2, fusion_pb2
-from emg.measurment.delay_tracker import DelayTracker
-from emg.measurment.jitter_tracker import JitterTracker
 from emg.config import WINDOW_MS, STEP_MS, MAX_DELAY_MS, MAX_RATE_HZ_EMG, MAX_RATE_HZ_ACC, MAX_RATE_HZ_FUSION, LOG_PREFIX
 
 
@@ -65,25 +62,6 @@ class FusionManager:
         # --- letzte Sensor-Eingangszeiten für dieses Fenster ---
         self._last_emg_input_ts: Optional[int] = None
         self._last_acc_input_ts: Optional[int] = None
-
-        # --- Pipeline-Delay & -Jitter: Sensor-Eingang -> fertig fusioniert ---
-        fusion_nominal_ms = 1000.0 / float(MAX_RATE_HZ_FUSION)
-
-        self._emg_to_fusion_delay = DelayTracker(
-            name="EMG_TO_FUSION_DELAY",
-        )
-        self._emg_to_fusion_jitter = JitterTracker(
-            nominal_period_ms=fusion_nominal_ms,
-            name="EMG_TO_FUSION_JITTER",
-        )
-
-        self._acc_to_fusion_delay = DelayTracker(
-            name="ACC_TO_FUSION_DELAY",
-        )
-        self._acc_to_fusion_jitter = JitterTracker(
-            nominal_period_ms=fusion_nominal_ms,
-            name="ACC_TO_FUSION_JITTER",
-        )
 
     # --------------------------------------------------------------------- #
     # Lifecycle
