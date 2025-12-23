@@ -147,9 +147,6 @@ class AccelManager:
                         await self.broadcaster.publish(sample)
                         self._marklog.mark("ACC_HAL_OUT", idx, int(time.time() * 1000))
 
-                        self._sensor_jitter.add(sample.ts_ms)  # kannst du lassen
-
-
                         # 2) sleep to hit desired ODR
                         now = time.perf_counter()
                         if last == 0.0:
