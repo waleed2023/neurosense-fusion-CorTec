@@ -38,13 +38,13 @@ async def main_async():
     app = BleGattApp(
         app_path="/app",
         local_name="NS-ProtoBLE",
-        service_uuids=[emg_svc.uuid],
+        service_uuids=[fusion_svc.uuid],
     )
 
 
     # attach StartNotify hook to your EMG notify characteristic
     stop_adv = app.get_stop_adv_hook()
-    for ch in getattr(emg_svc, "chars", []):
+    for ch in getattr(fusion_svc, "chars", []):
         if getattr(ch, "uuid", "") == EMG_RET and hasattr(ch, "set_on_start_notify"):
             ch.set_on_start_notify(stop_adv)
             if hasattr(ch, "set_on_stop_notify"):
