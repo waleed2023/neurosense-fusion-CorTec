@@ -9,10 +9,9 @@ from emg.broadcaster import Broadcaster
 from emg.proto import emg_pb2, fusion_pb2
 from emg.config import WINDOW_MS, STEP_MS, MAX_DELAY_MS, MAX_RATE_HZ_EMG, MAX_RATE_HZ_ACC, MAX_RATE_HZ_FUSION, LOG_PREFIX
 
-
-def now_us() -> int:
-    return time.time_ns() // 1000  # µs since epoch
-
+def now_ms() -> int:
+    """Common wall-clock in ms, same as used in EMG/Accel managers."""
+    return int(time.time() * 1000)
 
 
 class FusionManager:
