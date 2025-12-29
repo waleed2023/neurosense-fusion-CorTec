@@ -6,17 +6,17 @@ from emg.config import METRICS_LOG_FILE
 class TimingMarkLogger:
     """
     CSV rows:
-      mark,<name>,<idx>,<ts_ms>,,,
+      mark,<name>,<idx>,<ts_us>,,,
     """
     def __init__(self, log_file: Optional[str] = None) -> None:
         self.log_file = log_file or METRICS_LOG_FILE
 
-    def mark(self, name: str, idx: int, ts_ms: int) -> None:
+    def mark(self, name: str, idx: int, ts_us: int) -> None:
         if not self.log_file:
             return
         try:
             with open(self.log_file, "a", encoding="utf-8") as f:
-                # kind,name,idx,ts_ms,dt_ms,abs_dev_ms,delay_ms
-                f.write(f"mark,{name},{idx},{ts_ms},,,\n")
+                # kind,name,idx,ts_us,dt_us,abs_dev_us,delay_us
+                f.write(f"mark,{name},{idx},{ts_us},,,\n")
         except OSError:
             pass

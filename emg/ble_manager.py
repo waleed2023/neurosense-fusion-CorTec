@@ -14,6 +14,9 @@ from .config import (
     EMG_IDLE_TIMEOUT_MS,
     SENSOR_METRICS_LOG_FILE,
     MAX_RATE_HZ_EMG,
+    now_ns,
+    ns_to_ms,
+    ns_to_us,
 )
 from .proto import emg_pb2
 from dbus_next.aio import MessageBus
@@ -21,10 +24,6 @@ from dbus_next import Variant, BusType
 from emg.measurment.timing_mark_logger import TimingMarkLogger
 import os
 import random
-
-
-def now_ms() -> int:
-    return int(time.time() * 1000)
 
 
 
@@ -136,7 +135,7 @@ class BLEManager:
 
             try:
                 await self.broadcaster.publish(sample)
-                self._marklog.mark("EMG_HAL_OUT", idx, now_ms())
+                self._marklog.mark("EMG_HAL_OUT", idx, ns_to_us(now_ns()))
             except Exception as e:
                 sys.stderr.write(f"{LOG_PREFIX} EMG publish error: {e}\n")
             finally:
@@ -155,15 +154,17 @@ class BLEManager:
             if v > VALUE_MAX:
                 v = VALUE_MAX
 
-            now = now_ms()
+            t_ns = now_ns()
+            ts_ms = ns_to_ms(t_ns)   # bleibt ms für Protobuf/Fusion
+            ts_us = ns_to_us(t_ns)   # µs nur fürs Timing-Log
             self._hal_idx += 1
             idx = self._hal_idx
-            self._marklog.mark("EMG_HAL_ENTRY", idx, now)
-            self._last_emg_ms = now
+            self._marklog.mark("EMG_HAL_ENTRY", idx, ts_us)
+            self._last_emg_ms = ts_ms
 
             sample = emg_pb2.EmgSample(
                 value=v,
-                ts_ms=now,
+                ts_ms=ts_ms,
                 battery=self._battery,
             )
 
@@ -208,12 +209,12 @@ class BLEManager:
                     await client.start_notify(ANALOG_CHAR, self._on_emg)
                     sys.stdout.write(f"{LOG_PREFIX} EMG Notify active\n")
                     backoff = 1.0
-                    self._last_emg_ms = now_ms()
+                    self._last_emg_ms = ns_to_ms(now_ns())
 
                     while client.is_connected and not self._stop.is_set():
                         await asyncio.sleep(0.5)
                         if self._idle_timeout_ms > 0 and self._last_emg_ms:
-                            if (now_ms() - self._last_emg_ms) > self._idle_timeout_ms:
+                            if (ns_to_ms(now_ns()) - self._last_emg_ms) > self._idle_timeout_ms:
                                 sys.stdout.write(
                                     f"{LOG_PREFIX} no EMG for {self._idle_timeout_ms}ms → reconnect\n"
                                 )

@@ -4,9 +4,11 @@ import grpc
 import sys
 
 from .config import MAX_SAMPLES_PER_PACKET_ACCEL, MAX_WAIT_S_ACCEL, LOG_PREFIX
+from .broadcaster import Broadcaster
 from .proto import emg_pb2, emg_pb2_grpc
 
-    async def StreamAccelPackets(
+
+async def StreamAccelPackets(
         self,
         request: emg_pb2.AccelSubscribeRequest,
         context: grpc.aio.ServicerContext,

@@ -8,7 +8,7 @@ from smbus2 import SMBus
 
 from .config import (
     I2C_BUS, I2C_ADDR, ACCEL_ODR_HZ, ACCEL_FS_G, LOG_PREFIX, WHOAMI_EXPECTED,
-    REG_CTRL1_XL, REG_CTRL2_G, REG_CTRL3_C, REG_WHO_AM_I, OUTX_L_XL, SENSOR_METRICS_LOG_FILE,
+    REG_CTRL1_XL, REG_CTRL2_G, REG_CTRL3_C, REG_WHO_AM_I, OUTX_L_XL, SENSOR_METRICS_LOG_FILE, now_ns, ns_to_ms, ns_to_us,
 )
 from .proto import emg_pb2
 from emg.measurment.timing_mark_logger import TimingMarkLogger
@@ -133,19 +133,21 @@ class AccelManager:
                         self._hal_idx += 1
                         idx = self._hal_idx
 
-                        t_entry = int(time.time() * 1000)
-                        self._marklog.mark("ACC_HAL_ENTRY", idx, t_entry)
+                        t_ns = now_ns()
+                        t_entry_ms = ns_to_ms(t_ns)     # ms bleibt für Protobuf/Fusion
+                        t_entry_us = ns_to_us(t_ns)     # µs fürs Timing-Log
+                        self._marklog.mark("ACC_HAL_ENTRY", idx, t_entry_us)
 
                         sample = emg_pb2.AccelSample(
                             ax=AX,
                             ay=AY,
                             az=AZ,
                             mag=MAG,
-                            ts_ms=t_entry,
+                            ts_ms=t_entry_ms,
                         )
 
                         await self.broadcaster.publish(sample)
-                        self._marklog.mark("ACC_HAL_OUT", idx, int(time.time() * 1000))
+                        self._marklog.mark("ACC_HAL_OUT", idx, ns_to_us(now_ns()))
 
                         # 2) sleep to hit desired ODR
                         now = time.perf_counter()

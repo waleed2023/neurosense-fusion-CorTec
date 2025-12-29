@@ -10,9 +10,9 @@ from emg.proto import emg_pb2, fusion_pb2
 from emg.config import WINDOW_MS, STEP_MS, MAX_DELAY_MS, MAX_RATE_HZ_EMG, MAX_RATE_HZ_ACC, MAX_RATE_HZ_FUSION, LOG_PREFIX
 
 
-def now_ms() -> int:
-    """Common wall-clock in ms, same as used in EMG/Accel managers."""
-    return int(time.time() * 1000)
+def now_us() -> int:
+    return time.time_ns() // 1000  # µs since epoch
+
 
 
 class FusionManager:
@@ -22,7 +22,7 @@ class FusionManager:
         acc_broadcaster: Broadcaster,
         fusion_broadcaster: Broadcaster,
         *,
-        window_ms: int = WINDOW_MS,
+        window_us: int = WINDOW_MS,
         step_ms: int = STEP_MS,          # Fusion-Clock step size
         max_delay_ms: int = MAX_DELAY_MS,
         min_emg_samples: int = 1,
@@ -32,7 +32,7 @@ class FusionManager:
         self._acc_b = acc_broadcaster
         self._fusion_b = fusion_broadcaster
 
-        self._window_ms = window_ms
+        self._window_us = window_ms
         self._max_delay_ms = max_delay_ms
         self._step_ms = step_ms
 

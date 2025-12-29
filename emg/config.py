@@ -1,4 +1,5 @@
 import os
+import time
 
 # BLE
 ANALOG_CHAR = os.getenv("ANALOG_CHAR", "00002a58-0000-1000-8000-00805f9b34fb")
@@ -87,10 +88,22 @@ DEFAULT_APP_PATH = "/org/bluez/protoble"
 DEFAULT_ADV_PATH = f"{DEFAULT_APP_PATH}/advertisement0"
 DEFAULT_ADAPTER = "/org/bluez/hci0"
 # ===== Other Defaults =====
-EMG_IDLE_TIMEOUT_MS = int(os.getenv("EMG_IDLE_TIMEOUT_MS", "5000"))  # default 5s
+EMG_IDLE_TIMEOUT_MS = int(os.getenv("EMG_IDLE_TIMEOUT_MS", "50000"))  # default 5s
 METRICS_LOG_FILE = os.getenv("METRICS_LOG_FILE", "timing_metrics.csv")
 # Sensor metrics log file
 SENSOR_METRICS_LOG_FILE = os.getenv(
     "SENSOR_METRICS_LOG_FILE",
     "sensor_timing_metrics.csv",
 )
+
+
+
+def now_ns() -> int:
+    """Wall-clock in ns since epoch."""
+    return time.time_ns()
+
+def ns_to_ms(ns: int) -> int:
+    return ns // 1_000_000
+
+def ns_to_us(ns: int) -> int:
+    return ns // 1_000
