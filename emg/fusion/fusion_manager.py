@@ -188,7 +188,8 @@ class FusionManager:
                     if fused is not None:
                         # Zeitpunkt, wann dieses FusedSample wirklich fertig ist
                         await self._fusion_b.publish(fused)
-                        Fusion_idx += 1
+                        self._Fusion_idx += 1
+                        Fusion_idx = self._Fusion_idx
                         self._marklog.mark("FusionManager_out", Fusion_idx, ns_to_us(now_ns())) # Ausgang Zeitstempel für fusion manager
 
 
