@@ -6,8 +6,9 @@ from typing import Optional, List, Tuple
 
 from emg.fusion.rms_mag import OnlineRMSWindow, OnlineMagWindow
 from emg.broadcaster import Broadcaster
+from emg.measurment.timing_mark_logger import TimingMarkLogger
 from emg.proto import emg_pb2, fusion_pb2
-from emg.config import WINDOW_MS, STEP_MS, MAX_DELAY_MS, MAX_RATE_HZ_EMG, MAX_RATE_HZ_ACC, MAX_RATE_HZ_FUSION, LOG_PREFIX
+from emg.config import SENSOR_METRICS_LOG_FILE, WINDOW_MS, STEP_MS, MAX_DELAY_MS, MAX_RATE_HZ_EMG, MAX_RATE_HZ_ACC, MAX_RATE_HZ_FUSION, LOG_PREFIX, now_ns, ns_to_us
 
 def now_ms() -> int:
     """Common wall-clock in ms, same as used in EMG/Accel managers."""
@@ -62,6 +63,13 @@ class FusionManager:
         self._last_emg_input_ts: Optional[int] = None
         self._last_acc_input_ts: Optional[int] = None
 
+
+        # zeitstempel FusionEingang-ausgang- (für Jitter-Messung)
+        self._marklog = TimingMarkLogger(log_file=SENSOR_METRICS_LOG_FILE)
+        self._BLE_fusion_idx = 0
+        self._ACC_fusion_idx = 0
+        self.Fusion_idx = 0
+
     # --------------------------------------------------------------------- #
     # Lifecycle
     # --------------------------------------------------------------------- #
@@ -109,12 +117,16 @@ class FusionManager:
         # Start fusion tick now (aligned to whole millisecond)
         next_fusion_ts = now_ms()
 
+
         try:
             while True:
                 # --- 1) Fetch new EMG samples from queue ---
                 try:
                     while True:
                         s = emg_q.get_nowait()
+                        self._BLE_fusion_idx += 1
+                        BLE_idx = self._BLE_fusion_idx
+                        self._marklog.mark("BLEManager_Fusion_in",BLE_idx, ns_to_us(now_ns())) # Eingang Zeitstempel für fusion manager (aus BLE Manager)
                         self._debug_emg_read += 1
                         emg_buf.append(s)
                 except asyncio.QueueEmpty:
@@ -124,6 +136,9 @@ class FusionManager:
                 try:
                     while True:
                         s = acc_q.get_nowait()
+                        self._ACC_fusion_idx += 1
+                        ACC_idx = self._ACC_fusion_idx
+                        self._marklog.mark("ACCManager_Fusion_in",ACC_idx, ns_to_us(now_ns())) # Eingang Zeitstempel für fusion manager (aus ACC Manager)
                         self._debug_acc_read += 1
                         acc_buf.append(s)
                 except asyncio.QueueEmpty:
@@ -173,6 +188,9 @@ class FusionManager:
                     if fused is not None:
                         # Zeitpunkt, wann dieses FusedSample wirklich fertig ist
                         await self._fusion_b.publish(fused)
+                        Fusion_idx += 1
+                        self._marklog.mark("FusionManager_out", Fusion_idx, ns_to_us(now_ns())) # Ausgang Zeitstempel für fusion manager
+
 
 
                     # Next tick in fusion clock
