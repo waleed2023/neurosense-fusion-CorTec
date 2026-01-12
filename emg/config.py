@@ -1,6 +1,16 @@
 import os
 import time
 
+
+# micro services configuration
+GRPC_HOST = os.getenv("GRPC_HOST", "0.0.0.0")
+
+GRPC_PORT_EMG = int(os.getenv("GRPC_PORT_EMG", "50051"))  # BLE HAL -> Fusion
+GRPC_PORT_ACC = int(os.getenv("GRPC_PORT_ACC", "50052"))  # ACC HAL -> Fusion
+
+
+
+
 # BLE
 ANALOG_CHAR = os.getenv("ANALOG_CHAR", "00002a58-0000-1000-8000-00805f9b34fb")
 BATTERY_CHAR = os.getenv("BATTERY_CHAR", "00002a19-0000-1000-8000-00805f9b34fb")
