@@ -25,7 +25,7 @@ from emg.broadcaster import Broadcaster
 from emg.config import LOG_PREFIX, MAX_RATE_HZ_EMG, MAX_RATE_HZ_ACC, FUSION_RET
 from emg.fusion.fusion_manager import FusionManager
 from emg.ble.gatt_core import BleGattApp
-from emg.ble.emg_acc_services import build_fusion_service
+from emg.ble.fusion_service import build_fusion_service
 from emg.proto import emg_pb2, emg_pb2_grpc
 
 
