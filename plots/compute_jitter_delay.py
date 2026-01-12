@@ -1,9 +1,17 @@
 # compute_jitter_delay.py
 #
-# Plots (per sensor):
-#   1) delay        = OUT - ENTRY
-#   2) jitter_entry = ENTRY[i] - ENTRY[i-1]
-#   3) jitter_out   = OUT[i]   - OUT[i-1]
+# Reads a CSV metrics log (rows starting with "mark") and plots:
+#   1) HAL delay              = HAL_OUT - HAL_ENTRY
+#   2) HAL jitter (entry)     = HAL_ENTRY[i] - HAL_ENTRY[i-1]
+#   3) HAL jitter (out)       = HAL_OUT[i]   - HAL_OUT[i-1]
+#   4) Fusion jitter (in)     = FUSION_IN[i] - FUSION_IN[i-1]
+#   5) Fusion jitter (out)    = FUSION_OUT[i]- FUSION_OUT[i-1]
+#
+# Supported mark names (examples):
+#   EMG_HAL_ENTRY, EMG_HAL_OUT
+#   ACC_HAL_ENTRY, ACC_HAL_OUT
+#   BLEManager_Fusion_in, ACCManager_Fusion_in
+#   FusionManager_out   (also supports *_Fusion_out if you add it later)
 #
 # Unit handling:
 #   - Default: assumes timestamps are already in microseconds (us)
@@ -15,21 +23,44 @@ from __future__ import annotations
 import csv
 from collections import defaultdict
 from pathlib import Path
+from typing import Dict, DefaultDict
 
 import matplotlib.pyplot as plt
 
 
+# Observation point keys used internally
+HAL_ENTRY = "HAL_ENTRY"
+HAL_OUT = "HAL_OUT"
+FUSION_IN = "FUSION_IN"
+FUSION_OUT = "FUSION_OUT"
+
+
 def read_marks(fn: Path, ts_scale: int = 1):
-    """Read mark rows.
+    """Read mark rows into point->sensor->idx->ts.
 
     Expected rows:
       mark,<NAME>,<IDX>,<TS>,...
 
-    NAME must end with _HAL_ENTRY or _HAL_OUT.
     TS will be multiplied by ts_scale (e.g., ms->us: 1000).
+
+    Recognized NAME patterns:
+      <SENSOR>_HAL_ENTRY, <SENSOR>_HAL_OUT
+      <SENSOR>_Fusion_in, <SENSOR>_Fusion_out
+    plus some legacy/special names:
+      FusionManager_out  -> (FUSION_OUT, "Fusion")
+      FusionManager_in   -> (FUSION_IN,  "Fusion")
     """
-    entry = defaultdict(dict)  # entry[sensor][idx] = ts
-    out = defaultdict(dict)    # out[sensor][idx]   = ts
+    marks: Dict[str, DefaultDict[str, dict]] = {
+        HAL_ENTRY: defaultdict(dict),
+        HAL_OUT: defaultdict(dict),
+        FUSION_IN: defaultdict(dict),
+        FUSION_OUT: defaultdict(dict),
+    }
+
+    special = {
+        "FusionManager_out": (FUSION_OUT, "Fusion"),
+        "FusionManager_in": (FUSION_IN, "Fusion"),
+    }
 
     with fn.open(newline="", encoding="utf-8") as f:
         r = csv.reader(f)
@@ -46,14 +77,25 @@ def read_marks(fn: Path, ts_scale: int = 1):
             except ValueError:
                 continue
 
+            if name in special:
+                point, sensor = special[name]
+                marks[point][sensor][idx] = ts
+                continue
+
             if name.endswith("_HAL_ENTRY"):
                 sensor = name[: -len("_HAL_ENTRY")]
-                entry[sensor][idx] = ts
+                marks[HAL_ENTRY][sensor][idx] = ts
             elif name.endswith("_HAL_OUT"):
                 sensor = name[: -len("_HAL_OUT")]
-                out[sensor][idx] = ts
+                marks[HAL_OUT][sensor][idx] = ts
+            elif name.endswith("_Fusion_in"):
+                sensor = name[: -len("_Fusion_in")]
+                marks[FUSION_IN][sensor][idx] = ts
+            elif name.endswith("_Fusion_out"):
+                sensor = name[: -len("_Fusion_out")]
+                marks[FUSION_OUT][sensor][idx] = ts
 
-    return entry, out
+    return marks
 
 
 def compute_delay(entry, out):
@@ -67,7 +109,7 @@ def compute_delay(entry, out):
 
 
 def compute_dt(series_by_idx):
-    """Return dt list for consecutive indices: ts[i] - ts[i-1]."""
+    """Return dt list for consecutive indices: ts[i] - ts[i-1] (idx order)."""
     idxs = sorted(series_by_idx.keys())
     if len(idxs) < 2:
         return []
@@ -140,34 +182,51 @@ def main():
     args = ap.parse_args()
 
     ts_scale = 1000 if args.input_ms else 1  # ms -> us
-    entry, out = read_marks(args.csv_file, ts_scale=ts_scale)
+    marks = read_marks(args.csv_file, ts_scale=ts_scale)
 
-    delay_us = compute_delay(entry, out)
-    jitter_entry_us = {s: compute_dt(entry[s]) for s in entry.keys()}
-    jitter_out_us = {s: compute_dt(out[s]) for s in out.keys()}
+    hal_entry = marks[HAL_ENTRY]
+    hal_out = marks[HAL_OUT]
+    fusion_in = marks[FUSION_IN]
+    fusion_out = marks[FUSION_OUT]
+
+    delay_us = compute_delay(hal_entry, hal_out)
+    jitter_hal_entry_us = {s: compute_dt(hal_entry[s]) for s in hal_entry.keys()}
+    jitter_hal_out_us = {s: compute_dt(hal_out[s]) for s in hal_out.keys()}
+    jitter_fusion_in_us = {s: compute_dt(fusion_in[s]) for s in fusion_in.keys()}
+    jitter_fusion_out_us = {s: compute_dt(fusion_out[s]) for s in fusion_out.keys()}
 
     if args.abs:
         delay_us = {k: [abs(v) for v in vals] for k, vals in delay_us.items()}
-        jitter_entry_us = {k: [abs(v) for v in vals] for k, vals in jitter_entry_us.items()}
-        jitter_out_us = {k: [abs(v) for v in vals] for k, vals in jitter_out_us.items()}
+        jitter_hal_entry_us = {k: [abs(v) for v in vals] for k, vals in jitter_hal_entry_us.items()}
+        jitter_hal_out_us = {k: [abs(v) for v in vals] for k, vals in jitter_hal_out_us.items()}
+        jitter_fusion_in_us = {k: [abs(v) for v in vals] for k, vals in jitter_fusion_in_us.items()}
+        jitter_fusion_out_us = {k: [abs(v) for v in vals] for k, vals in jitter_fusion_out_us.items()}
 
     div = 1000.0 if args.output_ms else 1.0
     unit = "ms" if args.output_ms else "us"
 
     delay = _scale_values(delay_us, div)
-    jitter_entry = _scale_values(jitter_entry_us, div)
-    jitter_out = _scale_values(jitter_out_us, div)
+    jitter_hal_entry = _scale_values(jitter_hal_entry_us, div)
+    jitter_hal_out = _scale_values(jitter_hal_out_us, div)
+    jitter_fusion_in = _scale_values(jitter_fusion_in_us, div)
+    jitter_fusion_out = _scale_values(jitter_fusion_out_us, div)
 
-    _print_stats("delay(OUT-ENTRY)", delay, unit)
-    _print_stats("jitter(ENTRY->ENTRY)", jitter_entry, unit)
-    _print_stats("jitter(OUT->OUT)", jitter_out, unit)
+    _print_stats("delay(HAL_OUT - HAL_ENTRY)", delay, unit)
+    _print_stats("jitter(HAL_ENTRY -> HAL_ENTRY)", jitter_hal_entry, unit)
+    _print_stats("jitter(HAL_OUT -> HAL_OUT)", jitter_hal_out, unit)
+    _print_stats("jitter(FUSION_IN -> FUSION_IN)", jitter_fusion_in, unit)
+    _print_stats("jitter(FUSION_OUT -> FUSION_OUT)", jitter_fusion_out, unit)
 
     if delay:
         boxplot(delay, "HAL Delay (OUT - ENTRY)", f"delay_{unit}")
-    if jitter_entry:
-        boxplot(jitter_entry, "Jitter: ENTRY -> ENTRY (inter-arrival)", f"jitter_entry_{unit}")
-    if jitter_out:
-        boxplot(jitter_out, "Jitter: OUT -> OUT (inter-departure)", f"jitter_out_{unit}")
+    if jitter_hal_entry:
+        boxplot(jitter_hal_entry, "Jitter: HAL ENTRY -> HAL ENTRY (inter-arrival)", f"jitter_hal_entry_{unit}")
+    if jitter_hal_out:
+        boxplot(jitter_hal_out, "Jitter: HAL OUT -> HAL OUT (inter-departure)", f"jitter_hal_out_{unit}")
+    if jitter_fusion_in:
+        boxplot(jitter_fusion_in, "Jitter: Fusion IN -> Fusion IN (inter-arrival)", f"jitter_fusion_in_{unit}")
+    if jitter_fusion_out:
+        boxplot(jitter_fusion_out, "Jitter: Fusion OUT -> Fusion OUT (inter-departure)", f"jitter_fusion_out_{unit}")
 
     plt.show()
 
