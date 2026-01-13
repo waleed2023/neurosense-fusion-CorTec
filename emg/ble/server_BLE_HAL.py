@@ -18,7 +18,7 @@ import grpc
 
 from emg.broadcaster import Broadcaster
 from emg.ble_manager import BLEManager
-from emg.config import LOG_PREFIX, GRPC_HOST, MAX_RATE_HZ_EMG, GRPC_PORT_EMG
+from emg.config import LOG_PREFIX, GRPC_HOST, MAX_RATE_HZ_EMG
 from emg.proto import emg_pb2, emg_pb2_grpc
 
 
@@ -40,10 +40,14 @@ class EmgGrpcServicer(emg_pb2_grpc.EmgServicer):
     async def StreamEmg(self, request: emg_pb2.SubscribeRequest, context: grpc.aio.ServicerContext):
         q = await self._b.subscribe()
         try:
+            # max_rate_hz from client request in case the client(my case flutter/dart app) wants to limit rate, otherwise use MAX_RATE_HZ_EMG
             max_rate = int(getattr(request, "max_rate_hz", 0) or 0)
             if max_rate <= 0:
-                max_rate = MAX_RATE_HZ_EMG
+                max_rate = MAX_RATE_HZ_EMG # with ARN Corp M40 factory data rate is 10hz
             interval = 0.0 if max_rate <= 0 else (1.0 / float(max_rate)) # throttle as "max samples per second"
+            # example: if max_rate = 100Hz, interval = 0.01s
+            # may_rate = 0 -> send all samples as they come
+            # throttling hier is drop samples if they come too fast
             loop = asyncio.get_running_loop()
             last = 0.0
 
@@ -52,8 +56,8 @@ class EmgGrpcServicer(emg_pb2_grpc.EmgServicer):
 
                 if interval > 0.0:
                     now = loop.time()
-                    if (now - last) < interval:
-                        continue
+                    if (now - last) < interval: # too eyarly than interval (ex. 0.01s for 100Hz)
+                        continue # drop sample
                     last = now
 
                 yield sample

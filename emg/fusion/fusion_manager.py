@@ -51,7 +51,7 @@ class FusionManager:
         self._task: Optional[asyncio.Task] = None
         self._seq: int = 0
 
-        # Debug counters
+        # Debug counters # not used yet
         self._debug_emg_read: int = 0
         self._debug_acc_read: int = 0
 

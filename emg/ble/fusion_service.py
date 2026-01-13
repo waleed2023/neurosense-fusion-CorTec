@@ -23,7 +23,8 @@ async def _fusion_stream_loop(
 ) -> None:
     """
     Reads FusedSample objects from the fusion broadcaster and sends them
-    via send_bytes(), optionally throttled by max_rate_hz in the request.
+    via send_bytes().
+    throttle is defined by FusionSubscribeRequest.max_rate_hz in proto/fusion.proto, MAX_RATE_HZ_FUSION defined in config.py
     """
     req = fusion_pb2.FusionSubscribeRequest()
     try:

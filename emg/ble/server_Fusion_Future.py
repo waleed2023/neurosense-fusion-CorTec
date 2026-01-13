@@ -35,11 +35,11 @@ def _env_int(name: str, default: int) -> int:
     except Exception:
         return default
 
-
+# Pull EMG samples from gRPC HAL service into local broadcaster
 async def _grpc_pull_emg(*, stop_evt: asyncio.Event, broadcaster: Broadcaster, host: str, port: int):
     backoff = 1.0
     target = f"{host}:{port}"
-    req = emg_pb2.SubscribeRequest(max_rate_hz=_env_int("FUSION_REQ_RATE_HZ_EMG", MAX_RATE_HZ_EMG))
+    req = emg_pb2.SubscribeRequest(max_rate_hz=_env_int("FUSION_REQ_RATE_HZ_EMG", MAX_RATE_HZ_EMG)) # MAX_RATE_HZ_EMG for maximal data rate from HAL, same for ACC
 
     while not stop_evt.is_set():
         channel = None
@@ -59,7 +59,7 @@ async def _grpc_pull_emg(*, stop_evt: asyncio.Event, broadcaster: Broadcaster, h
             raise
         except Exception as e:
             sys.stdout.write(f"{LOG_PREFIX} [fusion] EMG gRPC error: {e}\n")
-            await asyncio.sleep(backoff)
+            await asyncio.sleep(backoff) # exponential backoff on reconnect incase of failure
             backoff = min(backoff * 2.0, 10.0)
         finally:
             if channel is not None:
@@ -92,7 +92,7 @@ async def _grpc_pull_acc(*, stop_evt: asyncio.Event, broadcaster: Broadcaster, h
             raise
         except Exception as e:
             sys.stdout.write(f"{LOG_PREFIX} [fusion] ACC gRPC error: {e}\n")
-            await asyncio.sleep(backoff)
+            await asyncio.sleep(backoff) # exponential backoff on reconnect
             backoff = min(backoff * 2.0, 10.0)
         finally:
             if channel is not None:
@@ -109,9 +109,9 @@ async def main_async():
     fusion_b = Broadcaster()
 
     # 2) gRPC upstream locations (HAL services)
-    emg_host = os.getenv("EMG_GRPC_HOST", "127.0.0.1")
+    emg_host = os.getenv("EMG_GRPC_HOST", "127.0.0.1")#local
     acc_host = os.getenv("ACC_GRPC_HOST", "127.0.0.1")
-    emg_port = _env_int("GRPC_PORT_EMG", 50051)
+    emg_port = _env_int("GRPC_PORT_EMG", 50051)#port defined
     acc_port = _env_int("GRPC_PORT_ACC", 50052)
 
     stop_evt = asyncio.Event()
@@ -133,7 +133,7 @@ async def main_async():
     # 5) Setup BLE GATT + advertisement (BlueZ D-Bus)
     bus = await MessageBus(bus_type=BusType.SYSTEM).connect()
     fusion_svc = build_fusion_service(bus, fusion_b)
-
+    # Create GATT application with Fusion service saved in /app, advertised as NS-ProtoBLE to find on Tablet :)
     app = BleGattApp(
         app_path="/app",
         local_name=os.getenv("BLE_LOCAL_NAME", "NS-ProtoBLE"),
@@ -150,7 +150,7 @@ async def main_async():
             sys.stdout.write(f"{LOG_PREFIX} [fusion] Hooks wired to FUSION_RET (notify)\n")
             break
 
-    await app.run(bus, [fusion_svc])
+    await app.run(bus, [fusion_svc]) # send advertisement + register GATT service with BlueZ, implemented in gatt_core.py
     sys.stdout.write(f"{LOG_PREFIX} [fusion] BLE ProtoBLE server running as '{app.local_name}'\n")
 
     # 6) Stop handling

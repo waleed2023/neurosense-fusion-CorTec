@@ -18,7 +18,7 @@ import grpc
 
 from emg.broadcaster import Broadcaster
 from emg.accel_manager import AccelManager
-from emg.config import LOG_PREFIX, GRPC_HOST, MAX_RATE_HZ_ACC, GRPC_PORT_ACC
+from emg.config import LOG_PREFIX, GRPC_HOST, MAX_RATE_HZ_ACC
 from emg.proto import emg_pb2, emg_pb2_grpc
 
 
@@ -45,13 +45,16 @@ class AccelGrpcServicer(emg_pb2_grpc.AccelServicer):
         q = await self._b.subscribe()
         try:
             # Throttle as "max samples per second" (drop if too fast)
+            # max_rate_hz from client request in case the client(my case flutter/dart app) wants to limit rate, otherwise use MAX_RATE_HZ_ACC
             max_rate = int(getattr(request, "max_rate_hz", 0) or 0)
+            if max_rate <= 0:
+                max_rate = MAX_RATE_HZ_ACC
             interval = 0.0 if max_rate <= 0 else (1.0 / float(max_rate))
             loop = asyncio.get_running_loop()
             last = 0.0
 
             while True:
-                sample: emg_pb2.AccelSample = await q.get()
+                sample: emg_pb2.AccelSample = await q.get() # get sample from broadcaster
 
                 if interval > 0.0:
                     now = loop.time()
@@ -70,6 +73,9 @@ class AccelGrpcServicer(emg_pb2_grpc.AccelServicer):
 async def _serve_grpc(broadcaster: Broadcaster, *, host: str, port: int) -> grpc.aio.Server:
     # max_send_message_length and max_receive_message_length increased to 4MB
     # max_receive_message_length increased to 4MB
+    # good for high-frequency data streaming
+    # in my case it ok to have it
+    # data will send by yielding samples one by one
     server = grpc.aio.server(
         options=[
             ("grpc.max_send_message_length", 4 * 1024 * 1024),
