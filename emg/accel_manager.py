@@ -68,7 +68,7 @@ class AccelManager:
             odr_bits = 0xA0
         elif ACCEL_ODR_HZ >= 3330:
             odr_bits = 0x90
-        elif ACCEL_ODR_HZ >= 1660:
+        elif ACCEL_ODR_HZ >= 1666:
             odr_bits = 0x80
         elif ACCEL_ODR_HZ >= 833:
             odr_bits = 0x70
