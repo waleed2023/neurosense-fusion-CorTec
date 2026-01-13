@@ -38,6 +38,7 @@ class EmgGrpcServicer(emg_pb2_grpc.EmgServicer):
         self._b = broadcaster
 
     async def StreamEmg(self, request: emg_pb2.SubscribeRequest, context: grpc.aio.ServicerContext):
+        # context: grpc.aio.ServicerContext is used as signature
         q = await self._b.subscribe()
         try:
             # max_rate_hz from client request in case the client(my case flutter/dart app) wants to limit rate, otherwise use MAX_RATE_HZ_EMG

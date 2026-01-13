@@ -109,9 +109,9 @@ async def main_async():
     fusion_b = Broadcaster()
 
     # 2) gRPC upstream locations (HAL services)
-    emg_host = os.getenv("EMG_GRPC_HOST", "127.0.0.1")#local
+    emg_host = os.getenv("EMG_GRPC_HOST", "127.0.0.1")
     acc_host = os.getenv("ACC_GRPC_HOST", "127.0.0.1")
-    emg_port = _env_int("GRPC_PORT_EMG", 50051)#port defined
+    emg_port = _env_int("GRPC_PORT_EMG", 50051)
     acc_port = _env_int("GRPC_PORT_ACC", 50052)
 
     stop_evt = asyncio.Event()
