@@ -47,7 +47,7 @@ class AccelGrpcServicer(emg_pb2_grpc.AccelServicer):
             # Throttle as "max samples per second" (drop if too fast)
             # max_rate_hz from client request in case the client(my case flutter/dart app) wants to limit rate, otherwise use MAX_RATE_HZ_ACC
             max_rate = int(getattr(request, "max_rate_hz", 0) or 0)
-            interval = 0.0 if max_rate < 0 else (1.0 / float(max_rate))
+            interval = 0.0 if max_rate <= 0 else (1.0 / float(max_rate))
             loop = asyncio.get_running_loop()
             last = 0.0
 
