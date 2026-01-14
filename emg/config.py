@@ -1,6 +1,16 @@
 import os
 import time
 
+
+# micro services configuration
+GRPC_HOST = os.getenv("GRPC_HOST", "0.0.0.0")
+
+GRPC_PORT_EMG = int(os.getenv("GRPC_PORT_EMG", "50051"))  # BLE HAL -> Fusion
+GRPC_PORT_ACC = int(os.getenv("GRPC_PORT_ACC", "50052"))  # ACC HAL -> Fusion
+
+
+
+
 # BLE
 ANALOG_CHAR = os.getenv("ANALOG_CHAR", "00002a58-0000-1000-8000-00805f9b34fb")
 BATTERY_CHAR = os.getenv("BATTERY_CHAR", "00002a19-0000-1000-8000-00805f9b34fb")
@@ -24,7 +34,7 @@ DROP_OLDEST_ON_FULL = os.getenv("DROP_OLDEST_ON_FULL", "1") not in ("0", "false"
 # ===== I2C / ACCEL (LSM6DSx) =====
 I2C_BUS = int(os.getenv("I2C_BUS", "1"))
 I2C_ADDR = int(os.getenv("I2C_ADDR", "0x6B"), 16)
-ACCEL_ODR_HZ = float(os.getenv("ACCEL_ODR_HZ", "833"))  # Poll-Rate, options: 12.5, 26, 52, 104, 208, 416, 833, 1660
+ACCEL_ODR_HZ = float(os.getenv("ACCEL_ODR_HZ", "833"))  # Poll-Rate, options: 12.5, 26, 52, 104, 208, 416, 833, 1666 ,3332, 6664
 ACCEL_FS_G = int(os.getenv("ACCEL_FS_G", "2")) # scale ±2g, ±4g, ±8g, ±16g, depending on case
 LOG_PREFIX = os.getenv("LOG_PREFIX", "[emg]") # Prefix for log messages
 
@@ -35,7 +45,7 @@ REG_CTRL1_XL        = 0x10
 REG_CTRL2_G         = 0x11
 REG_CTRL3_C         = 0x12
 OUTX_L_XL           = 0x28
-WHOAMI_EXPECTED = {0x6A, 0x6B, 0x69} # possible values for LSM6DS3, LSM6DS4, LSM6DSO
+WHOAMI_EXPECTED = {0x6A, 0x6B, 0x69, 0x6c} # possible values for LSM6DS3, LSM6DS4, LSM6DSO
 
 
 # ===== Streaming / Packet Sizes =====
@@ -52,9 +62,9 @@ STEP_MS = int(os.getenv("FUSION_STEP_MS", "1"))      # step size for fusion in m
 MAX_DELAY_MS = int(os.getenv("FUSION_MAX_DELAY_MS", "100"))  # 100 ms max allowed delay between EMG and ACC samples, defines the lookback window into historical data
 
 # ===== max rates just for jitter =====
-MAX_RATE_HZ_ACC = int(os.getenv("FUSION_MAX_RATE_HZ", "500")) 
-MAX_RATE_HZ_EMG = int(os.getenv("FUSION_MAX_RATE_HZ_EMG", "100"))
-MAX_RATE_HZ_FUSION = int(os.getenv("FUSION_MAX_RATE_HZ_FUSION", "100")) # max output rate of fused samples to tablet
+MAX_RATE_HZ_ACC = int(os.getenv("FUSION_MAX_RATE_HZ", "1000")) 
+MAX_RATE_HZ_EMG = int(os.getenv("FUSION_MAX_RATE_HZ_EMG", "50"))
+MAX_RATE_HZ_FUSION = int(os.getenv("FUSION_MAX_RATE_HZ_FUSION", "200")) # max output rate of fused samples to tablet
 
 
 # UUIDs

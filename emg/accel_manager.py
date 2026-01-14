@@ -49,38 +49,53 @@ class AccelManager:
         #self._jitter._log_jitter_summary()
 
     def _init_sensor(self, bus: SMBus, addr: int):
-        # Soft-Reset
+        who = bus.read_byte_data(addr, REG_WHO_AM_I)
+        if who != 0x6C:
+            sys.stderr.write(f"{LOG_PREFIX} Warning: WHO_AM_I=0x{who:02X} (expected 0x6C for LSM6DSOX)\n")
+
         bus.write_byte_data(addr, REG_CTRL3_C, 0x01)
-        time.sleep(0.05)
-        # IF_INC=1 (Auto-Increment), BDU=1
-        bus.write_byte_data(addr, REG_CTRL3_C, 0b01000100)
+        t0 = time.time()
+        while (bus.read_byte_data(addr, REG_CTRL3_C) & 0x01) != 0:
+            if time.time() - t0 > 0.2:
+                break
+            time.sleep(0.005)
 
-        # Accel ODR (approx) + FS
-        # ODR Bits: 0x10=12.5Hz, 0x20=26Hz, 0x30=52Hz, 0x40=104Hz, 0x50=208Hz, 0x60=416Hz, 0x70=833Hz, 0x80=1.66k
-        odr_bits = 0x40  # default 104Hz
-        if   ACCEL_ODR_HZ >= 1660: odr_bits = 0x80
-        elif ACCEL_ODR_HZ >= 833:  odr_bits = 0x70
-        elif ACCEL_ODR_HZ >= 416:  odr_bits = 0x60
-        elif ACCEL_ODR_HZ >= 208:  odr_bits = 0x50
-        elif ACCEL_ODR_HZ >= 104:  odr_bits = 0x40
-        elif ACCEL_ODR_HZ >= 52:   odr_bits = 0x30
-        else:                      odr_bits = 0x10
+        bus.write_byte_data(addr, REG_CTRL3_C, 0x44)  # BDU=1, IF_INC=1
 
-        # FS Bits (CTRL1_XL[5:4]): 00=±2g, 10=±4g, 11=±8g, 01=±16g (depending on data sheet variant)
-        fs_bits = 0x00
-        if ACCEL_FS_G == 4:  fs_bits = 0x10
-        if ACCEL_FS_G == 8:  fs_bits = 0x18
-        if ACCEL_FS_G == 16: fs_bits = 0x08
+        if ACCEL_ODR_HZ <= 0:
+            odr_bits = 0x00
+        elif ACCEL_ODR_HZ >= 6660:
+            odr_bits = 0xA0
+        elif ACCEL_ODR_HZ >= 3330:
+            odr_bits = 0x90
+        elif ACCEL_ODR_HZ >= 1660:
+            odr_bits = 0x80
+        elif ACCEL_ODR_HZ >= 833:
+            odr_bits = 0x70
+        elif ACCEL_ODR_HZ >= 416:
+            odr_bits = 0x60
+        elif ACCEL_ODR_HZ >= 208:
+            odr_bits = 0x50
+        elif ACCEL_ODR_HZ >= 104:
+            odr_bits = 0x40
+        elif ACCEL_ODR_HZ >= 52:
+            odr_bits = 0x30
+        elif ACCEL_ODR_HZ >= 26:
+            odr_bits = 0x20
+        else:
+            odr_bits = 0x10
+
+        if ACCEL_FS_G == 16:
+            fs_bits = 0x04
+        elif ACCEL_FS_G == 4:
+            fs_bits = 0x08
+        elif ACCEL_FS_G == 8:
+            fs_bits = 0x0C
+        else:
+            fs_bits = 0x00
 
         bus.write_byte_data(addr, REG_CTRL1_XL, odr_bits | fs_bits)
-
-        # Disable gyro
-        # for now we don't use the gyro, so turn it off to save power
         bus.write_byte_data(addr, REG_CTRL2_G, 0x00)
-
-        who = bus.read_byte_data(addr, REG_WHO_AM_I)
-        if who not in WHOAMI_EXPECTED:
-            sys.stderr.write(f"{LOG_PREFIX} Warning: WHO_AM_I=0x{who:02X}\n")
 
     def _read_accel_g(self, bus: SMBus, addr: int):
         """Read accel data, return AX, AY, AZ in g and magnitude MAG."""
