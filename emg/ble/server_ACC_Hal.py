@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """ACC HAL service (I2C) + gRPC streaming.
 
-Runs on the Raspberry Pi as an independent systemd service.
+Runs on the Raspberry Pi as an independent service.
 
 Responsibilities:
   - Poll accelerometer via AccelManager (HAL).
@@ -24,30 +24,23 @@ from emg.proto import emg_pb2, emg_pb2_grpc
 
 
 
-# Helper to read integer env vars with defaults
-def _env_int(name: str, default: int) -> int:
-    try:
-        return int(os.getenv(name, str(default)))
-    except Exception:
-        return default
-
 # gRPC Servicer for Accel streaming
 class AccelGrpcServicer(emg_pb2_grpc.AccelServicer):
     """Streams AccelSample objects from a Broadcaster."""
 
     def __init__(self, broadcaster: Broadcaster):
-        self._b = broadcaster
+        self._buffer = broadcaster
     # grpc method
     async def StreamAccel(
         self,
         request: emg_pb2.AccelSubscribeRequest,
         context: grpc.aio.ServicerContext,
     ):
-        q = await self._b.subscribe()
+        q = await self._buffer.subscribe()
         try:
             # Throttle as "max samples per second" (drop if too fast)
             # max_rate_hz from client request in case the client(my case flutter/dart app) wants to limit rate, otherwise use MAX_RATE_HZ_ACC
-            max_rate = int(getattr(request, "max_rate_hz", 0) or 0)
+            max_rate = int(getattr(request, "max_rate_hz", 0))
             if max_rate <= 0:
                 max_rate = MAX_RATE_HZ_ACC
             interval = 0.0 if max_rate <= 0 else (1.0 / float(max_rate))
@@ -68,21 +61,11 @@ class AccelGrpcServicer(emg_pb2_grpc.AccelServicer):
         except asyncio.CancelledError:
             raise
         finally:
-            await self._b.unsubscribe(q)
+            await self._buffer.unsubscribe(q)
 
 # Set up and start the gRPC server
-async def _serve_grpc(broadcaster: Broadcaster, *, host: str, port: int) -> grpc.aio.Server:
-    # max_send_message_length and max_receive_message_length increased to 4MB
-    # max_receive_message_length increased to 4MB
-    # good for high-frequency data streaming
-    # in my case it ok to have it
-    # data will send by yielding samples one by one
-    server = grpc.aio.server(
-        options=[
-            ("grpc.max_send_message_length", 4 * 1024 * 1024),
-            ("grpc.max_receive_message_length", 4 * 1024 * 1024),
-        ]
-    )
+async def _bulild_grpc(broadcaster: Broadcaster, *, host: str, port: int) -> grpc.aio.Server:
+    server = grpc.aio.server()
     emg_pb2_grpc.add_AccelServicer_to_server(AccelGrpcServicer(broadcaster), server)
     bind = f"{host}:{port}"
     server.add_insecure_port(bind)
@@ -96,10 +79,10 @@ async def main_async():
     acc_mgr = AccelManager(acc_b)
 
     # Ports: keep separated from EMG/Fusion
-    grpc_port = _env_int("GRPC_PORT_ACC", 50052)
+    grpc_port = int(os.getenv("GRPC_PORT_ACC", str(50052)))
     grpc_host = os.getenv("GRPC_HOST", GRPC_HOST)
 
-    grpc_server = await _serve_grpc(acc_b, host=grpc_host, port=grpc_port)
+    grpc_server = await _bulild_grpc(acc_b, host=grpc_host, port=grpc_port)
 
     acc_task = asyncio.create_task(acc_mgr.run(), name="accel-manager")
 

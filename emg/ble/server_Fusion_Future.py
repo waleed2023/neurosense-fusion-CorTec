@@ -72,7 +72,7 @@ async def _grpc_pull_emg(*, stop_evt: asyncio.Event, broadcaster: Broadcaster, h
 async def _grpc_pull_acc(*, stop_evt: asyncio.Event, broadcaster: Broadcaster, host: str, port: int):
     backoff = 1.0
     target = f"{host}:{port}"
-    req = emg_pb2.AccelSubscribeRequest(max_rate_hz=_env_int("FUSION_REQ_RATE_HZ_ACC", MAX_RATE_HZ_ACC), axis=0)
+    req = emg_pb2.AccelSubscribeRequest(max_rate_hz=_env_int("FUSION_REQ_RATE_HZ_ACC", MAX_RATE_HZ_ACC))
 
     while not stop_evt.is_set():
         channel = None

@@ -23,26 +23,19 @@ from emg.proto import emg_pb2, emg_pb2_grpc
 
 
 
-# Helper to read integer env vars with defaults
-def _env_int(name: str, default: int) -> int:
-    try:
-        return int(os.getenv(name, str(default)))
-    except Exception:
-        return default
-
 # gRPC Servicer for EMG streaming
 class EmgGrpcServicer(emg_pb2_grpc.EmgServicer):
     """Streams EmgSample objects from a Broadcaster."""
 
     def __init__(self, broadcaster: Broadcaster):
-        self._b = broadcaster
+        self._buffer = broadcaster
 
     async def StreamEmg(self, request: emg_pb2.SubscribeRequest, context: grpc.aio.ServicerContext):
         # context: grpc.aio.ServicerContext is used as signature
-        q = await self._b.subscribe()
+        q = await self._buffer.subscribe()
         try:
             # max_rate_hz from client request in case the client(my case flutter/dart app) wants to limit rate, otherwise use MAX_RATE_HZ_EMG
-            max_rate = int(getattr(request, "max_rate_hz", 0) or 0)
+            max_rate = int(getattr(request, "max_rate_hz", 0))
             if max_rate <= 0:
                 max_rate = MAX_RATE_HZ_EMG # with ARN Corp M40 factory data rate is 10hz
             interval = 0.0 if max_rate <= 0 else (1.0 / float(max_rate)) # throttle as "max samples per second"
@@ -66,7 +59,7 @@ class EmgGrpcServicer(emg_pb2_grpc.EmgServicer):
         except asyncio.CancelledError:
             raise
         finally:
-            await self._b.unsubscribe(q)
+            await self._buffer.unsubscribe(q)
 
 
 # Set up and start the gRPC server
@@ -88,13 +81,13 @@ async def _serve_grpc(broadcaster: Broadcaster, *, host: str, port: int) -> grpc
 
 
 async def main_async():
-    emg_b = Broadcaster()
-    ble_mgr = BLEManager(emg_b)
+    emg_buffer = Broadcaster()
+    ble_mgr = BLEManager(emg_buffer)
 
-    grpc_port = _env_int("GRPC_PORT_EMG", 50051)
+    grpc_port = int(os.getenv("GRPC_PORT_EMG", 50051))
     grpc_host = os.getenv("GRPC_HOST", GRPC_HOST)
 
-    grpc_server = await _serve_grpc(emg_b, host=grpc_host, port=grpc_port)
+    grpc_server = await _serve_grpc(emg_buffer, host=grpc_host, port=grpc_port)
 
     ble_task = asyncio.create_task(ble_mgr.run(), name="ble-manager")
 
