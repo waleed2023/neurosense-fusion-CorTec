@@ -21,7 +21,7 @@ from .config import (
     now_ns,
     ns_to_us,
 )
-from ..proto import emg_pb2
+from ..proto import sensor_pb2
 from app.measurment.timing_mark_logger import TimingMarkLogger
 
 EMG_RX_QUEUE_MAX = 2048
@@ -52,7 +52,7 @@ class BLEManager:
         self._hal_idx = 0
 
         # queue + worker state (store (idx, sample) to match OUT to ENTRY)
-        self._emg_rx_q: asyncio.Queue[tuple[int, emg_pb2.EmgSample]] = asyncio.Queue(
+        self._emg_rx_q: asyncio.Queue[tuple[int, sensor_pb2.EmgSample]] = asyncio.Queue(
             maxsize=EMG_RX_QUEUE_MAX
         )
         self._loop: Optional[asyncio.AbstractEventLoop] = None
@@ -100,7 +100,7 @@ class BLEManager:
 
         return self._resolved_mac
 
-    def _try_enqueue_emg(self, item: tuple[int, emg_pb2.EmgSample]) -> None:
+    def _try_enqueue_emg(self, item: tuple[int, sensor_pb2.EmgSample]) -> None:
         try:
             self._emg_rx_q.put_nowait(item)
         except asyncio.QueueFull:
@@ -151,7 +151,7 @@ class BLEManager:
             self._marklog.mark("EMG_HAL_ENTRY", idx, ts_us)
             self._last_emg_us = ts_us
 
-            sample = emg_pb2.EmgSample(
+            sample = sensor_pb2.EmgSample(
                 value=v,
                 ts_us=ts_us,
                 battery=self._battery,

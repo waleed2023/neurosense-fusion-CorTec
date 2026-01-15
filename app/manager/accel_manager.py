@@ -24,7 +24,7 @@ from .config import (
     now_ns,
     ns_to_us,
 )
-from ..proto import emg_pb2
+from ..proto import sensor_pb2
 from app.measurment.timing_mark_logger import TimingMarkLogger
 
 
@@ -155,7 +155,7 @@ class AccelManager:
                         ts_us = ns_to_us(now_ns())
                         self._marklog.mark("ACC_HAL_ENTRY", idx, ts_us)
 
-                        sample = emg_pb2.AccelSample(
+                        sample = sensor_pb2.AccelSample(
                             ax=AX,
                             ay=AY,
                             az=AZ,

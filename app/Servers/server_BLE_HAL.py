@@ -19,18 +19,18 @@ import grpc
 from app.manager.broadcaster import Broadcaster
 from app.manager.ble_manager import BLEManager
 from app.manager.config import LOG_PREFIX, GRPC_HOST, MAX_RATE_HZ_EMG
-from app.proto import emg_pb2, emg_pb2_grpc
+from app.proto import sensor_pb2, sensor_pb2_grpc
 
 
 
 # gRPC Servicer for EMG streaming
-class EmgGrpcServicer(emg_pb2_grpc.EmgServicer):
+class EmgGrpcServicer(sensor_pb2_grpc.EmgServicer):
     """Streams EmgSample objects from a Broadcaster."""
 
     def __init__(self, broadcaster: Broadcaster):
         self._buffer = broadcaster
 
-    async def StreamEmg(self, request: emg_pb2.SubscribeRequest, context: grpc.aio.ServicerContext):
+    async def StreamEmg(self, request: sensor_pb2.SubscribeRequest, context: grpc.aio.ServicerContext):
         # context: grpc.aio.ServicerContext is used as signature
         q = await self._buffer.subscribe()
         try:
@@ -46,7 +46,7 @@ class EmgGrpcServicer(emg_pb2_grpc.EmgServicer):
             last = 0.0
 
             while True:
-                sample: emg_pb2.EmgSample = await q.get()
+                sample: sensor_pb2.EmgSample = await q.get()
 
                 if interval > 0.0:
                     now = loop.time()
@@ -72,7 +72,7 @@ async def _serve_grpc(broadcaster: Broadcaster, *, host: str, port: int) -> grpc
             ("grpc.max_receive_message_length", 4 * 1024 * 1024),
         ]
     )
-    emg_pb2_grpc.add_EmgServicer_to_server(EmgGrpcServicer(broadcaster), server)
+    sensor_pb2_grpc.add_EmgServicer_to_server(EmgGrpcServicer(broadcaster), server)
     bind = f"{host}:{port}"
     server.add_insecure_port(bind)
     await server.start()

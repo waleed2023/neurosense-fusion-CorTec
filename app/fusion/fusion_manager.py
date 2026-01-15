@@ -7,7 +7,7 @@ from typing import Optional, List
 from app.fusion.rms_mag import OnlineRMSWindow, OnlineMagWindow
 from app.manager.broadcaster import Broadcaster
 from app.measurment.timing_mark_logger import TimingMarkLogger
-from app.proto import emg_pb2, fusion_pb2
+from app.proto import sensor_pb2, fusion_pb2
 from app.manager.config import (
     SENSOR_METRICS_LOG_FILE,
     WINDOW_MS,
@@ -103,10 +103,10 @@ class FusionManager:
             (ready if s.ts_us <= ts_end_us else rest).append(s)
         return ready, rest
 
-    async def _drain_emg(self, q: asyncio.Queue, buf: List[emg_pb2.EmgSample]) -> None:
+    async def _drain_emg(self, q: asyncio.Queue, buf: List[sensor_pb2.EmgSample]) -> None:
         while True:
             try:
-                s: emg_pb2.EmgSample = q.get_nowait()
+                s: sensor_pb2.EmgSample = q.get_nowait()
             except asyncio.QueueEmpty:
                 return
 
@@ -124,10 +124,10 @@ class FusionManager:
                 else:
                     self._first_ts_us = min(self._first_ts_us, ts)
 
-    async def _drain_acc(self, q: asyncio.Queue, buf: List[emg_pb2.AccelSample]) -> None:
+    async def _drain_acc(self, q: asyncio.Queue, buf: List[sensor_pb2.AccelSample]) -> None:
         while True:
             try:
-                s: emg_pb2.AccelSample = q.get_nowait()
+                s: sensor_pb2.AccelSample = q.get_nowait()
             except asyncio.QueueEmpty:
                 return
 
@@ -149,8 +149,8 @@ class FusionManager:
         emg_q = await self._emg_b.subscribe()
         acc_q = await self._acc_b.subscribe()
 
-        emg_buf: List[emg_pb2.EmgSample] = []
-        acc_buf: List[emg_pb2.AccelSample] = []
+        emg_buf: List[sensor_pb2.EmgSample] = []
+        acc_buf: List[sensor_pb2.AccelSample] = []
 
         next_tick_us: Optional[int] = None
 

@@ -26,7 +26,7 @@ from app.manager.config import LOG_PREFIX, MAX_RATE_HZ_EMG, MAX_RATE_HZ_ACC, FUS
 from app.fusion.fusion_manager import FusionManager
 from app.servers.gatt_core import BleGattApp
 from app.servers.fusion_service import build_fusion_service
-from app.proto import emg_pb2, emg_pb2_grpc
+from app.proto import sensor_pb2, sensor_pb2_grpc
 
 
 def _env_int(name: str, default: int) -> int:
@@ -39,14 +39,14 @@ def _env_int(name: str, default: int) -> int:
 async def _grpc_pull_emg(*, stop_evt: asyncio.Event, broadcaster: Broadcaster, host: str, port: int):
     backoff = 1.0
     target = f"{host}:{port}"
-    req = emg_pb2.SubscribeRequest(max_rate_hz=_env_int("FUSION_REQ_RATE_HZ_EMG", MAX_RATE_HZ_EMG)) # MAX_RATE_HZ_EMG for maximal data rate from HAL, same for ACC
+    req = sensor_pb2.SubscribeRequest(max_rate_hz=_env_int("FUSION_REQ_RATE_HZ_EMG", MAX_RATE_HZ_EMG)) # MAX_RATE_HZ_EMG for maximal data rate from HAL, same for ACC
 
     while not stop_evt.is_set():
         channel = None
         try:
             sys.stdout.write(f"{LOG_PREFIX} [fusion] connecting EMG gRPC -> {target}\n")
             channel = grpc.aio.insecure_channel(target)
-            stub = emg_pb2_grpc.EmgStub(channel)
+            stub = sensor_pb2_grpc.EmgStub(channel)
 
             async for sample in stub.StreamEmg(req):
                 await broadcaster.publish(sample)
@@ -72,14 +72,14 @@ async def _grpc_pull_emg(*, stop_evt: asyncio.Event, broadcaster: Broadcaster, h
 async def _grpc_pull_acc(*, stop_evt: asyncio.Event, broadcaster: Broadcaster, host: str, port: int):
     backoff = 1.0
     target = f"{host}:{port}"
-    req = emg_pb2.AccelSubscribeRequest(max_rate_hz=_env_int("FUSION_REQ_RATE_HZ_ACC", MAX_RATE_HZ_ACC))
+    req = sensor_pb2.AccelSubscribeRequest(max_rate_hz=_env_int("FUSION_REQ_RATE_HZ_ACC", MAX_RATE_HZ_ACC))
 
     while not stop_evt.is_set():
         channel = None
         try:
             sys.stdout.write(f"{LOG_PREFIX} [fusion] connecting ACC gRPC -> {target}\n")
             channel = grpc.aio.insecure_channel(target)
-            stub = emg_pb2_grpc.AccelStub(channel)
+            stub = sensor_pb2_grpc.AccelStub(channel)
 
             async for sample in stub.StreamAccel(req):
                 await broadcaster.publish(sample)
