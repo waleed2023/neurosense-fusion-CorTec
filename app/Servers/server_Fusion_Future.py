@@ -24,8 +24,8 @@ from dbus_next import BusType
 from app.manager.broadcaster import Broadcaster
 from app.manager.config import LOG_PREFIX, MAX_RATE_HZ_EMG, MAX_RATE_HZ_ACC, FUSION_RET
 from app.fusion.fusion_manager import FusionManager
-from app.Servers.gatt_core import BleGattApp
-from app.Servers.fusion_service import build_fusion_service
+from app.servers.gatt_core import BleGattApp
+from app.servers.fusion_service import build_fusion_service
 from app.proto import emg_pb2, emg_pb2_grpc
 
 

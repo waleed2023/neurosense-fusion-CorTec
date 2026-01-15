@@ -1,7 +1,7 @@
 # emg/measurment/timing_mark_logger.py
 from __future__ import annotations
 from typing import Optional
-from emg.config import METRICS_LOG_FILE
+from app.manager.config import METRICS_LOG_FILE
 
 class TimingMarkLogger:
     """
