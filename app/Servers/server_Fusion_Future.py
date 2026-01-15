@@ -5,8 +5,8 @@ Runs on the Raspberry Pi as a third service.
 
 Responsibilities:
   - Connect to the two HAL services via gRPC streams:
-      * server_BLE_HAL  -> emg.Emg/StreamEmg
-      * server_ACC_HAL  -> emg.Accel/StreamAccel
+      * server_BLE_HAL  -> app.manager/StreamEmg
+      * server_ACC_HAL  -> app.manager/StreamAccel
   - Feed received samples into local Broadcasters.
   - Run FusionManager to compute FusedSample and publish to fusion broadcaster.
   - Expose BLE GATT service (Fusion) + advertisement via BlueZ D-Bus, similar to server_main.py.
@@ -29,17 +29,12 @@ from app.servers.fusion_service import build_fusion_service
 from app.proto import sensor_pb2, sensor_pb2_grpc
 
 
-def _env_int(name: str, default: int) -> int:
-    try:
-        return int(os.getenv(name, str(default)))
-    except Exception:
-        return default
 
 # Pull EMG samples from gRPC HAL service into local broadcaster
 async def _grpc_pull_emg(*, stop_evt: asyncio.Event, broadcaster: Broadcaster, host: str, port: int):
     backoff = 1.0
     target = f"{host}:{port}"
-    req = sensor_pb2.SubscribeRequest(max_rate_hz=_env_int("FUSION_REQ_RATE_HZ_EMG", MAX_RATE_HZ_EMG)) # MAX_RATE_HZ_EMG for maximal data rate from HAL, same for ACC
+    req = sensor_pb2.SubscribeRequest(max_rate_hz=int(os.getenv("FUSION_REQ_RATE_HZ_EMG", MAX_RATE_HZ_EMG))) # MAX_RATE_HZ_EMG for maximal data rate from HAL, same for ACC
 
     while not stop_evt.is_set():
         channel = None
@@ -72,7 +67,7 @@ async def _grpc_pull_emg(*, stop_evt: asyncio.Event, broadcaster: Broadcaster, h
 async def _grpc_pull_acc(*, stop_evt: asyncio.Event, broadcaster: Broadcaster, host: str, port: int):
     backoff = 1.0
     target = f"{host}:{port}"
-    req = sensor_pb2.AccelSubscribeRequest(max_rate_hz=_env_int("FUSION_REQ_RATE_HZ_ACC", MAX_RATE_HZ_ACC))
+    req = sensor_pb2.AccelSubscribeRequest(max_rate_hz=int(os.getenv("FUSION_REQ_RATE_HZ_ACC", MAX_RATE_HZ_ACC)))
 
     while not stop_evt.is_set():
         channel = None
@@ -111,8 +106,8 @@ async def main_async():
     # 2) gRPC upstream locations (HAL services)
     emg_host = os.getenv("EMG_GRPC_HOST", "127.0.0.1")
     acc_host = os.getenv("ACC_GRPC_HOST", "127.0.0.1")
-    emg_port = _env_int("GRPC_PORT_EMG", 50051)
-    acc_port = _env_int("GRPC_PORT_ACC", 50052)
+    emg_port = int(os.getenv("GRPC_PORT_EMG", 50051))
+    acc_port = int(os.getenv("GRPC_PORT_ACC", 50052))
 
     stop_evt = asyncio.Event()
 
