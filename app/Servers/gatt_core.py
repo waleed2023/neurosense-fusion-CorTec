@@ -9,7 +9,7 @@ from dbus_next.constants import PropertyAccess
 from dbus_next.service import ServiceInterface, method, dbus_property
 import sys
 
-from emg.config import (
+from app.manager.config import (
     BLUEZ,
     DBUS_PROP_IFACE,
     OBJM_IFACE,

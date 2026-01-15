@@ -16,10 +16,10 @@ import signal
 import sys
 import grpc
 
-from emg.broadcaster import Broadcaster
-from emg.ble_manager import BLEManager
-from emg.config import LOG_PREFIX, GRPC_HOST, MAX_RATE_HZ_EMG
-from emg.proto import emg_pb2, emg_pb2_grpc
+from app.manager.broadcaster import Broadcaster
+from app.manager.ble_manager import BLEManager
+from app.manager.config import LOG_PREFIX, GRPC_HOST, MAX_RATE_HZ_EMG
+from app.proto import emg_pb2, emg_pb2_grpc
 
 
 

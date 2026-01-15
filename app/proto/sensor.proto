@@ -12,7 +12,7 @@ message SubscribeRequest {
 
 message EmgSample {
   uint32 value = 1;   // 0..1000 (clamped)
-  uint64 ts_ms = 2;
+  uint64 ts_us = 2;
   uint32 battery = 3; // 0..100; 255 = unbekannt
 }
 
@@ -35,7 +35,7 @@ message AccelSample {
   double ay = 2;   // g
   double az = 3;   // g
   double mag = 4;  // g
-  uint64 ts_ms = 5;
+  uint64 ts_us = 5;
 }
 
 // Paket mit mehreren ACC Samples
