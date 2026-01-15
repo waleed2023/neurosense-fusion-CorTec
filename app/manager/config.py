@@ -108,12 +108,13 @@ SENSOR_METRICS_LOG_FILE = os.getenv(
 
 
 
-def now_ns() -> int:
-    """Wall-clock in ns since epoch."""
-    return time.time_ns()
+import time
 
-def ns_to_ms(ns: int) -> int:
-    return ns // 1_000_000
+_EPOCH_OFFSET_NS = time.time_ns() - time.monotonic_ns()
+
+def now_ns() -> int:
+    # epoch-like wall clock, but monotonic-stable
+    return time.monotonic_ns() + _EPOCH_OFFSET_NS
 
 def ns_to_us(ns: int) -> int:
     return ns // 1_000
