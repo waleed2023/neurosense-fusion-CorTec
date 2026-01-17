@@ -2,9 +2,8 @@
 from __future__ import annotations
 
 import asyncio
-from typing import Optional, List
-
-from matplotlib.pylab import sample
+from collections import deque
+from typing import Optional, Deque
 
 from app.fusion.rms_mag import OnlineRMSWindow, OnlineMagWindow
 from app.manager.broadcaster import Broadcaster
@@ -20,12 +19,77 @@ from app.manager.config import (
 )
 
 
+
+
+# ---- Watermark-driven fusion --------------------
+#
+# We do NOT use "wall-clock time" here. We only trust HAL timestamps (ts_us)
+# coming from sensors. The fusion loop runs on a fixed tick grid (STEP),
+# but it is allowed to advance only up to what we have actually *seen*.
+#
+# Definitions:
+#   watermark_us  = the newest (largest) HAL timestamp we have received so far
+#                   from ANY sensor (EMG or ACC). Think of it as: "how far the
+#                   stream has progressed".
+#
+#   max_delay_us  = safety margin for late packets. We intentionally compute
+#                   outputs in the past by this amount, so late samples can still
+#                   arrive before we finalize a tick.
+#
+#   allowed_tick_us = watermark_us + max_delay_us
+#       -> we are allowed to generate ticks up to this time on the tick grid.
+#
+# For each tick (next_tick_us), we compute features for:
+#   win_end_us   = next_tick_us - max_delay_us
+#   win_start_us = win_end_us - window_us
+#
+# So every output is computed from data in [win_start_us .. win_end_us]
+# and the output timestamp we publish is ts_us = win_end_us.
+#
+# Why does this work?
+#   If a sample is late by <= max_delay, it can still arrive before the tick that
+#   "covers" its timestamp is processed.
+#
+# Concrete example (with my numbers):
+#   STEP        = 1 ms
+#   WINDOW      = 200 ms
+#   MAX_DELAY   = 100 ms
+#
+# Suppose the newest sample we have received so far has ts_us = 1500 ms:
+#   watermark_us = 1500 ms
+#   allowed_tick_us = 1500 + 100 = 1600 ms
+#
+# This means we may process ticks up to next_tick_us = 1600 ms.
+#
+# What output does tick=1600ms produce?
+#   win_end_us   = 1600 - 100 = 1500 ms   <-- equals watermark (safe!)
+#   win_start_us = 1500 - 200 = 1300 ms
+#   => compute features from samples in [1300 .. 1500] ms
+#   => publish fused sample with ts_us = 1500 ms
+#
+# What if a sample with ts_us=1490ms arrives "late"?
+#   - If it arrives before we reach tick=1590ms (win_end=1490ms), it is included.
+#   - If it arrives later than the 100ms margin (too late), we have already
+#     finalized windows that end at 1490ms, so it won't affect past outputs.
+#
+# In short:
+#   watermark_us controls how far we can safely go.
+#   max_delay_us gives late packets time to arrive.
+#   window_us defines how much history we use per output.
+# ------------------------------------------------------------------------------
+
+
 class FusionManager:
     """
-    Fusion Algorithm Manager with Sliding Windows with steps.
+    Fusion Algorithm Manager with Sliding Windows and fixed steps.
     Fusion clock is driven by HAL timestamps (ts_us) only.
+
+    Key behavior:
     - Starts as soon as *one* sensor delivers samples.
-    - If one sensor has no samples in the window -> its output is 0 and valid=false.
+    - Drives output with a fixed tick grid (STEP_MS).
+    - Uses a sliding time window (WINDOW_MS) to compute features.
+    - If a sensor has too few samples in the current window:
+        -> hold the last valid feature value (feature-level sample-and-hold).
     """
 
     def __init__(
@@ -40,6 +104,7 @@ class FusionManager:
         min_emg_samples: int = 1,
         min_acc_samples: int = 1,
         max_steps_per_loop: int = 5000,
+        hold_timeout_ms: int = 0,  # 0 = hold forever
     ):
         self._emg_b = emg_broadcaster
         self._acc_b = acc_broadcaster
@@ -55,12 +120,12 @@ class FusionManager:
 
         self._task: Optional[asyncio.Task] = None
         self._seq: int = 0
-        # later used for debugging
-        # to know how many samples were read from each sensor ;)
+
+        # Debug counters: how many samples we drained from each sensor
         self._debug_emg_read: int = 0
         self._debug_acc_read: int = 0
 
-        # Online windows (we use ts_us units consistently)
+        # Online windows (all timestamps in microseconds)
         self._emg_rms_win = OnlineRMSWindow(self._window_us)
         self._acc_mag_win = OnlineMagWindow(self._window_us)
 
@@ -74,6 +139,19 @@ class FusionManager:
         self._first_ts_us: Optional[int] = None
         self._latest_emg_ts_us: Optional[int] = None
         self._latest_acc_ts_us: Optional[int] = None
+        self._clock_started: bool = False
+
+        # Hold-last-output (feature-level sample-and-hold)
+        # If the current sliding window has too few samples, keep the last valid feature value.
+        # hold_timeout_ms = 0 -> hold forever
+        self._hold_timeout_us = max(0, int(hold_timeout_ms)) * 1000
+
+        self._last_emg_level: float = 0.0
+        self._last_emg_ok_ts_us: Optional[int] = None
+
+        self._last_move_level: float = 0.0
+        self._last_move_var: float = 0.0
+        self._last_acc_ok_ts_us: Optional[int] = None
 
     def start(self) -> None:
         if self._task is None:
@@ -90,12 +168,10 @@ class FusionManager:
         self._task = None
 
     @property
-    # not used for now
     def debug_emg_read(self) -> int:
         return self._debug_emg_read
 
     @property
-    # not used for now
     def debug_acc_read(self) -> int:
         return self._debug_acc_read
 
@@ -103,130 +179,149 @@ class FusionManager:
         self._marklog.mark(point, idx, ns_to_us(now_ns()))
 
     @staticmethod
-    # Partition samples by timestamp
-    # return (ready, rest) where ready.ts_us <= ts_end_us
-    # ready: List of samples ready for processing
-    # rest: List of samples to keep for later
-    def _partition_by_ts_us(buf: List, ts_end_us: int):
-        ready, rest = [], []
-        for sample in buf:
-            (ready if sample.ts_us <= ts_end_us else rest).append(sample)
-        return ready, rest
+    def _pop_ready_by_ts_us(buf: Deque, ts_end_us: int) -> list:
+        """
+        works as filter for all samples with ts_us <= ts_end_us.
+        Efficiently pop samples from the left while ts_us <= ts_end_us.
+        Assumes samples arrive late in timestamp order.
+        """
+        ready = []
+        while buf and int(getattr(buf[0], "ts_us", 0)) <= ts_end_us:
+            ready.append(buf.popleft())
+        return ready
 
-    # Drain all available samples from EMG queue into buf
-    async def _drain_emg(self, queue: asyncio.Queue, buf: List[sensor_pb2.EmgSample]) -> None:
+    def _update_clock_state(self, ts_us: int, *, is_emg: bool) -> None:
+        """
+        Track:
+        - first_ts_us: earliest timestamp seen (only needed until clock starts)
+        - latest_emg_ts_us / latest_acc_ts_us: watermark sources
+        """
+        if ts_us <= 0: # invalid timestamp
+            return
+
+        if is_emg:
+            self._latest_emg_ts_us = ts_us if self._latest_emg_ts_us is None else max(self._latest_emg_ts_us, ts_us)
+        else:
+            self._latest_acc_ts_us = ts_us if self._latest_acc_ts_us is None else max(self._latest_acc_ts_us, ts_us)
+
+        # Only track the earliest timestamp until the fusion clock is started.
+        if not self._clock_started:
+            if self._first_ts_us is None:
+                self._first_ts_us = ts_us
+            else:
+                self._first_ts_us = min(self._first_ts_us, ts_us)
+
+    async def _collect_emg(self, queue: asyncio.Queue, buf: Deque[sensor_pb2.EmgSample]) -> int:
+        """collect all available samples from EMG queue into buf."""
+        drained = 0
         while True:
             try:
                 sample: sensor_pb2.EmgSample = queue.get_nowait()
             except asyncio.QueueEmpty:
-                return
+                return drained
 
+            drained += 1
             self._BLE_fusion_idx += 1
             self._mark("BLEManager_Fusion_in", self._BLE_fusion_idx)
 
             self._debug_emg_read += 1
             buf.append(sample)
-            ts = int(getattr(sample, "ts_us", 0)) # get ts_us from sensorHAL sample
-            if ts > 0: # not to neccessarily but in case of corrupted samples
-                # Update latest and first timestamps
-                self._latest_emg_ts_us = ts if self._latest_emg_ts_us is None else max(self._latest_emg_ts_us, ts)
-                if self._first_ts_us is None:
-                    self._first_ts_us = ts # in case sample is first ever
-                else:
-                    self._first_ts_us = min(self._first_ts_us, ts) # keep earliest timestamp
 
-    async def _drain_acc(self, q: asyncio.Queue, buf: List[sensor_pb2.AccelSample]) -> None:
-        
-        # Drain all available samples from ACC queue into buf
-        # analog to comments in _drain_emg()
+            ts = int(getattr(sample, "ts_us", 0))
+            self._update_clock_state(ts, is_emg=True)
+
+    async def _collect_acc(self, queue: asyncio.Queue, buf: Deque[sensor_pb2.AccelSample]) -> int:
+        """collect all available samples from ACC queue into buf."""
+        drained = 0
         while True:
             try:
-                sample_HAL: sensor_pb2.AccelSample = q.get_nowait()
+                sample: sensor_pb2.AccelSample = queue.get_nowait()
             except asyncio.QueueEmpty:
-                return
-            
-            self._ACC_fusion_idx += 1 # counter for fusion timing marks
+                return drained
+
+            drained += 1
+            self._ACC_fusion_idx += 1
             self._mark("ACCManager_Fusion_in", self._ACC_fusion_idx)
 
             self._debug_acc_read += 1
-            buf.append(sample_HAL)
-            ts = int(getattr(sample_HAL, "ts_us", 0)) # search for ts_us in HAL sample
-            if ts > 0:
-                self._latest_acc_ts_us = ts if self._latest_acc_ts_us is None else max(self._latest_acc_ts_us, ts)
-                if self._first_ts_us is None:
-                    self._first_ts_us = ts
-                else:
-                    self._first_ts_us = min(self._first_ts_us, ts) # choose earliest timestamp
+            buf.append(sample)
+
+            ts = int(getattr(sample, "ts_us", 0))
+            self._update_clock_state(ts, is_emg=False)
+
+    def _get_watermark_us(self) -> Optional[int]:
+        """Watermark = newest HAL timestamp we have seen (from either sensor)."""
+        wm = None
+        if self._latest_emg_ts_us is not None:
+            wm = self._latest_emg_ts_us
+        if self._latest_acc_ts_us is not None:
+            wm = self._latest_acc_ts_us if wm is None else max(wm, self._latest_acc_ts_us)
+        return wm
 
     async def _run(self) -> None:
-        # subscribe to EMG and ACC broadcasters
+        # Subscribe to EMG and ACC broadcasters
         emg_q = await self._emg_b.subscribe()
         acc_q = await self._acc_b.subscribe()
-        # Buffers for incoming samples
-        emg_buf: List[sensor_pb2.EmgSample] = []
-        acc_buf: List[sensor_pb2.AccelSample] = []
-        # next_tick_us is the timestamp of the next fusion step
+
+        # Buffers for incoming samples (deque for O(1) pops from the left)
+        emg_buf: Deque[sensor_pb2.EmgSample] = deque()
+        acc_buf: Deque[sensor_pb2.AccelSample] = deque()
+
+        # next_tick_us is the timestamp of the next fusion step (aligned to step grid)
         next_tick_us: Optional[int] = None
 
         try:
             while True:
-                # 1) store all available samples from sensors
-                await self._drain_emg(emg_q, emg_buf)
-                await self._drain_acc(acc_q, acc_buf)
+                # 1) drain queues
+                drained_emg = await self._collect_emg(emg_q, emg_buf)
+                drained_acc = await self._collect_acc(acc_q, acc_buf)
 
-                # 2) start fusion clock once first sample exists
+                # 2) start fusion clock once the first timestamp exists
                 if next_tick_us is None and self._first_ts_us is not None:
-                    base_tick = int(self._first_ts_us) + self._max_delay_us # first ts_us arrived sample
-                                                                            # from HAL + max_delay(maximal allowable latency for fusion)
-                    # ceil-align to step grid, align to step grid
+                    base_tick = int(self._first_ts_us) + self._max_delay_us
+                    # ceil-align to step grid (next multiple of step_us)
+                    # example: first_ts_us=1050, step_us=200 -> next_tick_us=1200
                     next_tick_us = ((base_tick + self._step_us - 1) // self._step_us) * self._step_us
+                    self._clock_started = True
 
                 # 3) if still no sensor data -> idle
                 if next_tick_us is None:
                     await asyncio.sleep(0.01)
                     continue
 
-                # 4) drive clock by newest HAL timestamp (watermark)
-                # look at HAL timestamps that arrived so far and allow fusion ticks up to that time + max_delay
-                # this allows to produce fused samples as long sensor data arrives
-                watermark_us: Optional[int] = None
-                if self._latest_emg_ts_us is not None:
-                    watermark_us = self._latest_emg_ts_us
-                if self._latest_acc_ts_us is not None:
-                    watermark_us = watermark_us if watermark_us is not None else self._latest_acc_ts_us
-                    watermark_us = max(watermark_us, self._latest_acc_ts_us)
-
+                # 4) drive fusion by watermark time (latest HAL time seen)
+                watermark_us = self._get_watermark_us()
                 if watermark_us is None:
                     await asyncio.sleep(0.01)
                     continue
 
                 allowed_tick_us = int(watermark_us) + self._max_delay_us
-                
 
-                # every ticks we look in time window and compute fused sample
-                # we take from buffers all samples with ts_us <= wind_end
-                # compute Feature and publish fused sample
+                # 5) process ticks up to allowed_tick_us
                 steps = 0
+                progressed = False
+
                 while next_tick_us <= allowed_tick_us and steps < self._max_steps_per_loop:
                     win_end_us = int(next_tick_us) - self._max_delay_us
                     win_start_us = win_end_us - self._window_us
 
-                    # EMG
+                    # EMG: move all samples with ts_us <= win_end_us into the RMS window
                     if emg_buf:
-                        ready, emg_buf = self._partition_by_ts_us(emg_buf, win_end_us)
+                        ready = self._pop_ready_by_ts_us(emg_buf, win_end_us)
                         for s in ready:
                             self._emg_rms_win.add_sample(int(s.ts_us), float(s.value))
 
-                    # ACC
+                    # ACC: move all samples with ts_us <= win_end_us into the magnitude window
                     if acc_buf:
-                        ready, acc_buf = self._partition_by_ts_us(acc_buf, win_end_us)
+                        ready = self._pop_ready_by_ts_us(acc_buf, win_end_us)
                         for s in ready:
                             self._acc_mag_win.add_sample(int(s.ts_us), float(abs(s.mag)))
 
-                    # slide windows
+                    # Slide windows: drop samples older than win_start_us
                     self._emg_rms_win.drop_older_than(win_start_us)
                     self._acc_mag_win.drop_older_than(win_start_us)
-                    # compute fused sample and publish
+
+                    # Compute fused sample and publish
                     fused = self._compute_fused_sample(ts_us=win_end_us)
                     await self._fusion_b.publish(fused)
 
@@ -235,35 +330,95 @@ class FusionManager:
 
                     next_tick_us += self._step_us
                     steps += 1
+                    progressed = True
 
-                # 5) wait a bit for new sensor data (keeps loop responsive)
-                await asyncio.sleep(0.001)
+                # If we hit the step limit, we are lagging behind (backpressure protection).
+                # You may want to log this as a warning in production.
+                # if steps >= self._max_steps_per_loop and next_tick_us <= allowed_tick_us:
+                #     print("[fusion] Warning: max_steps_per_loop reached, fusion is catching up slowly")
+
+                # 6) adaptive sleep:
+                # - if we progressed, yield quickly (keep latency low)
+                # - if nothing happened, sleep a bit longer to reduce CPU load
+                if progressed:
+                    await asyncio.sleep(0)
+                else:
+                    # If no new data arrived AND we couldn't progress ticks, wait a bit
+                    if drained_emg == 0 and drained_acc == 0:
+                        await asyncio.sleep(0.005)
+                    else:
+                        await asyncio.sleep(0.001)
 
         finally:
             await self._emg_b.unsubscribe(emg_q)
             await self._acc_b.unsubscribe(acc_q)
 
     def _compute_fused_sample(self, *, ts_us: int) -> fusion_pb2.FusedSample:
+        """
+        Compute features from the current sliding windows.
+        If a window has too few samples, hold the last valid feature value (sample-and-hold).
+        """
         emg_rms, emg_count = self._emg_rms_win.get_rms()
         move_level, move_var, acc_count = self._acc_mag_win.get_stats()
 
-        emg_valid = emg_count >= self._min_emg_samples
-        acc_valid = acc_count >= self._min_acc_samples
+        # Determine whether the current window has enough samples
+        emg_has_enough = emg_count >= self._min_emg_samples
+        acc_has_enough = acc_count >= self._min_acc_samples
 
-        emg_level = (emg_rms / 1000.0) if emg_valid else 0.0
-        if not acc_valid:
-            move_level = 0.0
-            move_var = 0.0
+        # ----- EMG: compute or hold -----
+        if emg_has_enough:
+            emg_level = float(emg_rms) / 1000.0
+            self._last_emg_level = emg_level
+            self._last_emg_ok_ts_us = int(ts_us)
+            emg_valid = True
+        else:
+            # Hold last valid value if available (and not stale if timeout enabled)
+            can_hold = self._last_emg_ok_ts_us is not None
+            if can_hold and self._hold_timeout_us > 0:
+                can_hold = (int(ts_us) - int(self._last_emg_ok_ts_us)) <= self._hold_timeout_us
+
+            if can_hold:
+                emg_level = float(self._last_emg_level)
+                emg_valid = True  # held-but-valid
+            else:
+                emg_level = 0.0
+                emg_valid = False
+
+        # ----- ACC: compute or hold -----
+        if acc_has_enough:
+            move_level = float(move_level)
+            move_var = float(move_var)
+            self._last_move_level = move_level
+            self._last_move_var = move_var
+            self._last_acc_ok_ts_us = int(ts_us)
+            acc_valid = True
+        else:
+            can_hold = self._last_acc_ok_ts_us is not None
+            if can_hold and self._hold_timeout_us > 0:
+                can_hold = (int(ts_us) - int(self._last_acc_ok_ts_us)) <= self._hold_timeout_us
+
+            if can_hold:
+                move_level = float(self._last_move_level)
+                move_var = float(self._last_move_var)
+                acc_valid = True  # held-but-valid
+            else:
+                move_level = 0.0
+                move_var = 0.0
+                acc_valid = False
+
+        # Note on counts:
+        # - emg_count / acc_count always reflect the *current window*.
+        # - If valid==True but count==0, the value was held (no fresh samples in the window).
 
         self._seq += 1
         return fusion_pb2.FusedSample(
-            ts_us=int(ts_us),              # Timestamp in microseconds (aligned fusion tick)
-            seq=int(self._seq),            # Monotonic sequence number for each fused output (good for debugging)
-            emg_level=float(emg_level),    # EMG feature value (e.g., window RMS), normalized/processed
-            emg_valid=bool(emg_valid),     # True if enough EMG samples were available in the window (for alignment)
-            emg_count=int(emg_count),      # Number of EMG samples used for this fused frame
-            move_level=float(move_level),  # Motion/accel feature value (e.g., magnitude-based level)
-            move_var=float(move_var),      # Motion variability over the window (variance) (we used as output for tabletapp)
-            acc_valid=bool(acc_valid),     # True if enough ACC samples were available in the window
-            acc_count=int(acc_count),      # Number of ACC samples used for this fused frame
+            ts_us=int(ts_us),
+            seq=int(self._seq),
+            emg_level=float(emg_level),
+            emg_valid=bool(emg_valid),
+            emg_count=int(emg_count),
+            move_level=float(move_level),
+            move_var=float(move_var),
+            acc_valid=bool(acc_valid),
+            acc_count=int(acc_count),
         )
