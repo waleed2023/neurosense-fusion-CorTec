@@ -5,7 +5,7 @@ from app.manager.broadcaster import Broadcaster
 from app.measurment.bandwidth import BandwidthTracker
 from app.proto import fusion_pb2
 from .gatt_core import GattService, NotifyChar, WriteChar, RpcStream
-from app.proto import fusion_dummy_pb2
+from app.proto import fusion_dummy_pb2 as fusion_minimal_pb2
 from app.manager.config import (
     FUSION_SVC,
     FUSION_PARAM,
@@ -116,7 +116,7 @@ async def _fusion_minimal_stream_loop(
     Stream FusedMinimalSample objects.
     Throttling is driven by sample.ts_us (HAL timestamps), NOT loop.time().
     """
-    req = fusion_dummy_pb2.FusionMinimalSubscribeRequest()
+    req = fusion_minimal_pb2.FusionMinimalSubscribeRequest()
     try:
         req.ParseFromString(req_bytes)
     except Exception:
@@ -135,7 +135,7 @@ async def _fusion_minimal_stream_loop(
 
     try:
         while True:
-            sample: fusion_dummy_pb2.FusedMinimalSample = await q.get()
+            sample: fusion_minimal_pb2.FusedMinimalSample = await q.get()
             ts_us = int(getattr(sample, "ts_us", 0))
 
             if interval_us > 0 and ts_us > 0 and last_sent_ts_us is not None:
