@@ -3,7 +3,7 @@ package emg;
 
 option java_multiple_files = true;
 option java_package = "dev.cortec-neuro.emg";
-option java_outer_classname = "FusionMinimalProto";
+option java_outer_classname = "Fusion_dummyProto";
 
 message FusionMinimalSubscribeRequest {
   uint32 max_rate_hz = 1;
