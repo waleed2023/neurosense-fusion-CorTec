@@ -1,0 +1,35 @@
+syntax = "proto3";
+package emg;
+
+option java_multiple_files = true;
+option java_package = "dev.cortec-neuro.emg";
+option java_outer_classname = "FusionMinimalProto";
+
+message FusionMinimalSubscribeRequest {
+  uint32 max_rate_hz = 1;
+}
+
+enum Trigger {
+  TRIGGER_EMG    = 1;
+  TRIGGER_ACC    = 2;
+}
+
+message FusedMinimalSample {
+  uint64 ts_us = 1;  // timestamp of the TRIGGER sample
+  uint32 seq   = 2;
+
+  uint64 emg_ts_us   = 3;
+  uint32 emg_value   = 4;
+  uint32 emg_battery = 5;
+  bool   emg_valid   = 6;
+  uint32 emg_count   = 7;  // 1 if this output contains NEW emg, else 0
+
+  uint64 acc_ts_us = 8;
+  double ax        = 9;
+  double ay        = 10;
+  double az        = 11;
+  bool   acc_valid = 12;
+  uint32 acc_count = 13;   // 1 if this output contains NEW acc, else 0
+
+  Trigger trigger = 14;
+}

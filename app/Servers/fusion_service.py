@@ -5,6 +5,7 @@ from app.manager.broadcaster import Broadcaster
 from app.measurment.bandwidth import BandwidthTracker
 from app.proto import fusion_pb2
 from .gatt_core import GattService, NotifyChar, WriteChar, RpcStream
+from app.proto import fusion_dummy_pb2
 from app.manager.config import (
     FUSION_SVC,
     FUSION_PARAM,
@@ -94,6 +95,82 @@ def build_fusion_service(bus, fusion_broadcaster: Broadcaster) -> GattService:
                 broadcaster=fusion_broadcaster,
                 req_bytes=data,
             )
+
+        stream = RpcStream(producer)
+        stream.start()
+
+    param_char = WriteChar("/app/fusion/param", FUSION_PARAM, svc, on_param)
+    svc.chars += [param_char, ret_char]
+    return svc
+
+
+
+########################### dummy fusion service ###########################
+
+
+
+async def _fusion_minimal_stream_loop(
+    *, send_bytes, broadcaster: Broadcaster, req_bytes: bytes
+) -> None:
+    """
+    Stream FusedMinimalSample objects.
+    Throttling is driven by sample.ts_us (HAL timestamps), NOT loop.time().
+    """
+    req = fusion_dummy_pb2.FusionMinimalSubscribeRequest()
+    try:
+        req.ParseFromString(req_bytes)
+    except Exception:
+        req.max_rate_hz = MAX_RATE_HZ_FUSION
+
+    max_rate = int(getattr(req, "max_rate_hz", 0))
+    if max_rate <= 0:
+        interval_us = 0  # no throttling
+    else:
+        interval_us = int(1_000_000 / float(max_rate))
+
+    last_sent_ts_us: Optional[int] = None
+
+    q: asyncio.Queue = await broadcaster.subscribe()
+    tracker = BandwidthTracker("FUSION-MIN-HAL->App", log_interval_s=20.0)
+
+    try:
+        while True:
+            sample: fusion_dummy_pb2.FusedMinimalSample = await q.get()
+            ts_us = int(getattr(sample, "ts_us", 0))
+
+            if interval_us > 0 and ts_us > 0 and last_sent_ts_us is not None:
+                dt = ts_us - last_sent_ts_us
+                if dt < 0:
+                    last_sent_ts_us = ts_us
+                elif dt < interval_us:
+                    continue
+
+            if ts_us > 0:
+                last_sent_ts_us = ts_us
+
+            payload = sample.SerializeToString()
+            tracker.add(len(payload))
+            await send_bytes(payload)
+    finally:
+        await broadcaster.unsubscribe(q)
+
+
+def build_fusion_minimal_service(bus, fusion_broadcaster: Broadcaster) -> GattService:
+    svc = GattService("/app/fusion", FUSION_SVC, primary=True)
+    ret_char = NotifyChar("/app/fusion/ret", FUSION_RET, svc)
+
+    stream: Optional[RpcStream] = None
+
+    async def on_param(data: bytes) -> None:
+        nonlocal stream
+        if stream:
+            stream.stop()
+
+        async def producer(_send) -> None:
+            async def send(b: bytes) -> None:
+                await ret_char.notify(b)
+
+            await _fusion_minimal_stream_loop(send_bytes=send, broadcaster=fusion_broadcaster, req_bytes=data)
 
         stream = RpcStream(producer)
         stream.start()
