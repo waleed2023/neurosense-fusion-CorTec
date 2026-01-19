@@ -5,7 +5,7 @@ from typing import Optional
 
 from app.manager.broadcaster import Broadcaster
 from app.manager.config import MAX_DELAY_MS
-from app.proto import sensor_pb2, fusion_minimal_pb2
+from app.proto import sensor_pb2, fusion_dummy_pb2 as fusion_minimal_pb2
 
 
 class FusionManagerMinimalEvent:
