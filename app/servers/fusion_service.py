@@ -6,7 +6,7 @@ from app.measurment.bandwidth import BandwidthTracker
 from app.proto import fusion_pb2
 from .gatt_core import GattService, NotifyChar, WriteChar, RpcStream
 from app.proto import fusion_pb2
-from app.proto import fusion_dummy_pb2 as fusion_minimal_pb2
+from app.proto import fusion_dummy_pb2
 
 from app.manager.config import (
     FUSION_SVC,
@@ -123,7 +123,7 @@ async def _fusion_minimal_stream_loop(
       - flush when max_samples reached, OR
       - flush when (ts_us - packet_start_ts_us) >= interval_us
     """
-    req = fusion_minimal_pb2.FusionMinimalSubscribeRequest()
+    req = fusion_dummy_pb2.FusionMinimalSubscribeRequest()
     try:
         req.ParseFromString(req_bytes)
     except Exception:
@@ -139,7 +139,7 @@ async def _fusion_minimal_stream_loop(
     q: asyncio.Queue = await broadcaster.subscribe()
     tracker = BandwidthTracker("FUSION-MIN-PACK-HAL->App", log_interval_s=20.0)
 
-    buf: list[fusion_minimal_pb2.FusedMinimalSample] = []
+    buf: list[fusion_dummy_pb2.FusedMinimalSample] = []
     start_ts_us: Optional[int] = None
 
     async def flush() -> None:
@@ -147,7 +147,7 @@ async def _fusion_minimal_stream_loop(
         if not buf:
             start_ts_us = None
             return
-        pkt = fusion_minimal_pb2.FusedMinimalPacket(samples=buf)
+        pkt = fusion_dummy_pb2.FusedMinimalPacket(samples=buf)
         payload = pkt.SerializeToString()
         tracker.add(len(payload))
         await send_bytes(payload)
@@ -156,7 +156,7 @@ async def _fusion_minimal_stream_loop(
 
     try:
         while True:
-            s: fusion_minimal_pb2.FusedMinimalSample = await q.get()
+            s: fusion_dummy_pb2.FusedMinimalSample = await q.get()
             ts_us = int(getattr(s, "ts_us", 0))
 
             if start_ts_us is None:
