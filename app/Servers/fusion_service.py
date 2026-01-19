@@ -5,7 +5,12 @@ from app.manager.broadcaster import Broadcaster
 from app.measurment.bandwidth import BandwidthTracker
 from app.proto import fusion_pb2
 from .gatt_core import GattService, NotifyChar, WriteChar, RpcStream
-from app.proto import fusion_minimal_pb2
+from app.proto import fusion_pb2
+try:
+    from app.proto import fusion_minimal_pb2
+except ImportError:
+    from app.proto import fusion_dummy_pb2 as fusion_minimal_pb2
+
 from app.manager.config import (
     FUSION_SVC,
     FUSION_PARAM,
