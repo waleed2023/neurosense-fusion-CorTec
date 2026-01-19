@@ -170,7 +170,7 @@ async def main_async() -> None:
     sys.stdout.write(f"{LOG_PREFIX} [fusion-min] BLE ProtoBLE server running as '{app.local_name}'\n")
 
     # 6) Stop handling
-    def _sig(*_args) -> None:
+    def _sig(*_ars) -> None:
         stop_evt.set()
 
     loop = asyncio.get_running_loop()
