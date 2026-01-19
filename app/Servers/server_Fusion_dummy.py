@@ -32,7 +32,7 @@ from app.manager.broadcaster import Broadcaster
 from app.manager.config import LOG_PREFIX, MAX_RATE_HZ_EMG, MAX_RATE_HZ_ACC, FUSION_RET
 from app.fusion.fusion_manager_dummy import FusionManagerMinimalEvent
 from app.servers.gatt_core import BleGattApp
-from app.servers.fusion_service import build_fusion_minimal_service
+from app.servers.fusion_service import build_fusion_service
 from app.proto import sensor_pb2, sensor_pb2_grpc
 
 
@@ -148,7 +148,7 @@ async def main_async() -> None:
 
     # 5) Setup BLE GATT + advertisement (BlueZ D-Bus)
     bus = await MessageBus(bus_type=BusType.SYSTEM).connect()
-    fusion_svc = build_fusion_minimal_service(bus, fusion_b)
+    fusion_svc = build_fusion_service(bus, fusion_b)
 
     app = BleGattApp(
         app_path="/app",
