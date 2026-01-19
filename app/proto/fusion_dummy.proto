@@ -10,8 +10,8 @@ message FusionMinimalSubscribeRequest {
 }
 
 enum Trigger {
-  TRIGGER_EMG    = 1;
-  TRIGGER_ACC    = 2;
+  TRIGGER_EMG    = 0;
+  TRIGGER_ACC    = 1;
 }
 
 message FusedMinimalSample {
