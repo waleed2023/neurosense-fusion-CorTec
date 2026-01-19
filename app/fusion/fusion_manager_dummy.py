@@ -34,12 +34,9 @@ class FusionManagerMinimalEvent:
         self._emg_b = emg_broadcaster
         self._acc_b = acc_broadcaster
         self._fusion_b = fusion_broadcaster
-
-        self._max_delay_us = max(0, int(max_delay_ms) * 1000)
-
+        self._max_delay_ms = max(0, max_delay_ms)
         self._task: Optional[asyncio.Task] = None
         self._seq = 0
-
         self._last_emg: Optional[sensor_pb2.EmgSample] = None
         self._last_acc: Optional[sensor_pb2.AccelSample] = None
 
@@ -61,9 +58,9 @@ class FusionManagerMinimalEvent:
         """Returns True if sample_ts_us is acceptable for ref_ts_us."""
         if sample_ts_us <= 0: # incase of missing timestamp
             return False
-        if self._max_delay_us <= 0: # in case of no delay limit
+        if self._max_delay_ms <= 0: # in case of no delay limit
             return True
-        return abs(int(ref_ts_us) - int(sample_ts_us)) <= self._max_delay_us
+        return abs(int(ref_ts_us) - int(sample_ts_us)) <= self._max_delay_ms
 
     def _build_fused(
         self,
