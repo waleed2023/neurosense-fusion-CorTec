@@ -56,6 +56,8 @@ class FusionManagerMinimalEvent:
 
     def _fresh(self, *, ref_ts_us: int, sample_ts_us: int) -> bool:
         """Returns True if sample_ts_us is acceptable for ref_ts_us."""
+        if sample_ts_us <= 0:
+            return False
         if self._max_delay_us <= 0:
             return True
         return abs(int(ref_ts_us) - int(sample_ts_us)) <= self._max_delay_us
