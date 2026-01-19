@@ -34,7 +34,7 @@ class FusionManagerMinimalEvent:
         self._emg_b = emg_broadcaster
         self._acc_b = acc_broadcaster
         self._fusion_b = fusion_broadcaster
-        self._max_delay_us = max(0, int(max_delay_ms) * 1000)  # ms -> µs
+        self._max_delay_us = int(max_delay_ms) * 1000
         self._task: Optional[asyncio.Task] = None
         self._seq = 0
         self._last_emg: Optional[sensor_pb2.EmgSample] = None
@@ -55,7 +55,6 @@ class FusionManagerMinimalEvent:
         self._task = None
 
     def _fresh(self, *, ref_ts_us: int, sample_ts_us: int) -> bool:
-        """Returns True if sample_ts_us is acceptable for ref_ts_us."""
         if sample_ts_us <= 0:
             return False
         if self._max_delay_us <= 0:

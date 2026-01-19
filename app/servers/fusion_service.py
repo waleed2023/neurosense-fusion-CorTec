@@ -6,10 +6,7 @@ from app.measurment.bandwidth import BandwidthTracker
 from app.proto import fusion_pb2
 from .gatt_core import GattService, NotifyChar, WriteChar, RpcStream
 from app.proto import fusion_pb2
-try:
-    from app.proto import fusion_minimal_pb2
-except ImportError:
-    from app.proto import fusion_dummy_pb2 as fusion_minimal_pb2
+from app.proto import fusion_dummy_pb2 as fusion_minimal_pb2
 
 from app.manager.config import (
     FUSION_SVC,
@@ -115,55 +112,84 @@ def build_fusion_service(bus, fusion_broadcaster: Broadcaster) -> GattService:
 
 
 async def _fusion_minimal_stream_loop(
-    *, send_bytes, broadcaster: Broadcaster, req_bytes: bytes
+    *,
+    send_bytes: Callable[[bytes], Awaitable[None]],
+    broadcaster: Broadcaster,
+    req_bytes: bytes,
 ) -> None:
     """
-    Stream FusedMinimalSample objects.
-    Throttling is driven by sample.ts_us (HAL timestamps), NOT loop.time().
+    Batching: collects multiple FusedMinimalSample into one FusedMinimalPacket and notifies that.
+    Packet flush rules:
+      - flush when max_samples reached, OR
+      - flush when (ts_us - packet_start_ts_us) >= interval_us
     """
     req = fusion_minimal_pb2.FusionMinimalSubscribeRequest()
     try:
         req.ParseFromString(req_bytes)
     except Exception:
         req.max_rate_hz = MAX_RATE_HZ_FUSION
+        req.max_samples = 10
 
-    max_rate = int(getattr(req, "max_rate_hz", 0))
-    if max_rate <= 0:
-        interval_us = 0  # no throttling
-    else:
-        interval_us = int(1_000_000 / float(max_rate))
+    packet_rate_hz = int(getattr(req, "max_rate_hz", 0))
+    max_samples = int(getattr(req, "max_samples", 0)) or 10
+    max_samples = max(1, min(max_samples, 200))  # safety
 
-    last_sent_ts_us: Optional[int] = None
+    interval_us = 0 if packet_rate_hz <= 0 else int(1_000_000 / float(packet_rate_hz))
 
     q: asyncio.Queue = await broadcaster.subscribe()
-    tracker = BandwidthTracker("FUSION-MIN-HAL->App", log_interval_s=20.0)
+    tracker = BandwidthTracker("FUSION-MIN-PACK-HAL->App", log_interval_s=20.0)
+
+    buf: list[fusion_minimal_pb2.FusedMinimalSample] = []
+    start_ts_us: Optional[int] = None
+
+    async def flush() -> None:
+        nonlocal buf, start_ts_us
+        if not buf:
+            start_ts_us = None
+            return
+        pkt = fusion_minimal_pb2.FusedMinimalPacket(samples=buf)
+        payload = pkt.SerializeToString()
+        tracker.add(len(payload))
+        await send_bytes(payload)
+        buf = []
+        start_ts_us = None
 
     try:
         while True:
-            sample: fusion_minimal_pb2.FusedMinimalSample = await q.get()
-            ts_us = int(getattr(sample, "ts_us", 0))
+            s: fusion_minimal_pb2.FusedMinimalSample = await q.get()
+            ts_us = int(getattr(s, "ts_us", 0))
 
-            if interval_us > 0 and ts_us > 0 and last_sent_ts_us is not None:
-                dt = ts_us - last_sent_ts_us
-                if dt < 0:
-                    last_sent_ts_us = ts_us
-                elif dt < interval_us:
-                    continue
+            if start_ts_us is None:
+                start_ts_us = ts_us
 
-            if ts_us > 0:
-                last_sent_ts_us = ts_us
+            # Handle timestamp reset/backwards: flush what we have
+            if ts_us > 0 and start_ts_us is not None and start_ts_us > 0 and ts_us < start_ts_us:
+                await flush()
+                start_ts_us = ts_us
 
-            payload = sample.SerializeToString()
-            tracker.add(len(payload))
-            await send_bytes(payload)
+            buf.append(s)
+
+            if len(buf) >= max_samples:
+                await flush()
+                continue
+
+            if interval_us > 0 and ts_us > 0 and start_ts_us is not None and start_ts_us > 0:
+                if (ts_us - start_ts_us) >= interval_us:
+                    await flush()
+
     finally:
+        # best-effort flush on exit
+        try:
+            await flush()
+        except Exception:
+            pass
         await broadcaster.unsubscribe(q)
 
 
 def build_fusion_minimal_service(bus, fusion_broadcaster: Broadcaster) -> GattService:
     svc = GattService("/app/fusion", FUSION_SVC, primary=True)
-    ret_char = NotifyChar("/app/fusion/ret", FUSION_RET, svc)
 
+    ret_char = NotifyChar("/app/fusion/ret", FUSION_RET, svc)
     stream: Optional[RpcStream] = None
 
     async def on_param(data: bytes) -> None:
@@ -171,11 +197,15 @@ def build_fusion_minimal_service(bus, fusion_broadcaster: Broadcaster) -> GattSe
         if stream:
             stream.stop()
 
-        async def producer(_send) -> None:
+        async def producer(_send: Callable[[bytes], Awaitable[None]]) -> None:
             async def send(b: bytes) -> None:
                 await ret_char.notify(b)
 
-            await _fusion_minimal_stream_loop(send_bytes=send, broadcaster=fusion_broadcaster, req_bytes=data)
+            await _fusion_minimal_stream_loop(
+                send_bytes=send,
+                broadcaster=fusion_broadcaster,
+                req_bytes=data,
+            )
 
         stream = RpcStream(producer)
         stream.start()
