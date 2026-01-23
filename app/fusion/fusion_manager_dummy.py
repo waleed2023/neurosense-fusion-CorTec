@@ -59,6 +59,8 @@ class FusionManagerMinimalEvent:
             return False
         if self._max_delay_us <= 0:
             return True
+        # Check if the sample is within MAX_DELAY of the reference timestamp. 
+        # example : ref=1000, sample=1200, max_delay=300 -> False
         return abs(int(ref_ts_us) - int(sample_ts_us)) <= self._max_delay_us
 
     def _build_fused(

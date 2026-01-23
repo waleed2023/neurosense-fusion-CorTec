@@ -119,151 +119,20 @@ async def _fusion_minimal_stream_loop(
     *,
     send_bytes: Callable[[bytes], Awaitable[None]],
     broadcaster,
-    req_bytes: bytes,
 ) -> None:
-    """
-    Batching: collects multiple FusedMinimalSample into one FusedMinimalPacket and notifies that.
-    Flush rules:
-      - flush when max_samples reached, OR
-      - flush when buffer_age >= interval (wall-clock), OR
-      - flush on timestamp reset/backwards (optional safety)
-    """
-
-    req = fusion_dummy_pb2.FusionMinimalSubscribeRequest()
-    try:
-        req.ParseFromString(req_bytes)
-    except Exception:
-        # sane defaults if parsing fails
-        req.max_rate_hz = MAX_RATE_HZ_FUSION
-        req.max_samples = 10
-
-    packet_rate_hz = int(getattr(req, "max_rate_hz", 0))
-    max_samples = int(getattr(req, "max_samples", 0)) or 10
-
-    # interval = max time we keep a partially filled packet (latency cap)
-    interval_s = 0.0 if packet_rate_hz <= 0 else (1.0 / float(packet_rate_hz))
-
     q: asyncio.Queue = await broadcaster.subscribe()
-    tracker = BandwidthTracker("FUSION-MIN-PACK-HAL->App", log_interval_s=20.0)
-
-    buf: list[fusion_dummy_pb2.FusedMinimalSample] = []
-    packet_started_t: Optional[float] = None  # monotonic time
-    last_ts_us: Optional[int] = None          # for backwards/reset detection (optional)
-
-    loop = asyncio.get_running_loop()
-
-    async def flush() -> None:
-        nonlocal packet_started_t, last_ts_us
-        if not buf:
-            packet_started_t = None
-            last_ts_us = None
-            return
-
-        pkt = fusion_dummy_pb2.FusedMinimalPacket()
-        pkt.samples.extend(buf)     # avoids any aliasing surprises
-        payload = pkt.SerializeToString()
-
-        tracker.add(len(payload))
-        await send_bytes(payload)
-
-        buf.clear()
-        packet_started_t = None
-        last_ts_us = None
-
     try:
         while True:
-            # 1) If buffer empty, block until first sample arrives
-            if not buf:
-                s = await q.get()
-                ts_us = int(getattr(s, "ts_us", 0))
-
-                buf.append(s)
-                packet_started_t = loop.time()
-                last_ts_us = ts_us if ts_us > 0 else None
-
-            # 2) Drain whatever is already available WITHOUT await (big speedup)
-            while len(buf) < max_samples:
+            s = await q.get()
+            while True:
                 try:
                     s = q.get_nowait()
                 except asyncio.QueueEmpty:
                     break
-
-                ts_us = int(getattr(s, "ts_us", 0))
-
-                # optional: if timestamps go backwards -> flush current packet first
-                if ts_us > 0 and last_ts_us is not None and ts_us < last_ts_us:
-                    await flush()
-                    # start a new packet with current sample
-                    buf.append(s)
-                    packet_started_t = loop.time()
-                    last_ts_us = ts_us
-                    continue
-
-                buf.append(s)
-                if ts_us > 0:
-                    last_ts_us = ts_us
-
-                if len(buf) >= max_samples:
-                    break
-
-            # 3) Flush if size cap hit
-            if len(buf) >= max_samples:
-                await flush()
-                continue
-
-            # 4) Flush if latency cap hit (wall-clock)
-            if interval_s > 0.0 and packet_started_t is not None:
-                age = loop.time() - packet_started_t
-                if age >= interval_s:
-                    await flush()
-                    continue
-
-                # 5) Otherwise wait until:
-                #    - next sample arrives, OR
-                #    - remaining time to interval expires (then flush)
-                remaining = interval_s - age
-                try:
-                    s = await asyncio.wait_for(q.get(), timeout=remaining)
-                except asyncio.TimeoutError:
-                    await flush()
-                    continue
-
-                ts_us = int(getattr(s, "ts_us", 0))
-
-                if ts_us > 0 and last_ts_us is not None and ts_us < last_ts_us:
-                    await flush()
-                    buf.append(s)
-                    packet_started_t = loop.time()
-                    last_ts_us = ts_us
-                    continue
-
-                buf.append(s)
-                if ts_us > 0:
-                    last_ts_us = ts_us
-
-            else:
-                # No interval configured -> just wait for next sample (size-based batching only)
-                s = await q.get()
-                ts_us = int(getattr(s, "ts_us", 0))
-
-                if ts_us > 0 and last_ts_us is not None and ts_us < last_ts_us:
-                    await flush()
-                    buf.append(s)
-                    packet_started_t = loop.time()
-                    last_ts_us = ts_us
-                    continue
-
-                buf.append(s)
-                if packet_started_t is None:
-                    packet_started_t = loop.time()
-                if ts_us > 0:
-                    last_ts_us = ts_us
+            payload = s.SerializeToString()  # s is a protobuf message
+            await send_bytes(payload)
 
     finally:
-        try:
-            await flush()
-        except Exception:
-            pass
         await broadcaster.unsubscribe(q)
 
 
@@ -273,19 +142,16 @@ def build_fusion_minimal_service(bus, fusion_broadcaster: Broadcaster) -> GattSe
     ret_char = NotifyChar("/app/fusion/ret", FUSION_RET, svc)
     stream: Optional[RpcStream] = None
 
-    async def on_param(data: bytes) -> None:
+    async def on_param(_data: bytes) -> None:
         nonlocal stream
         if stream:
             stream.stop()
 
-        async def producer(_send: Callable[[bytes], Awaitable[None]]) -> None:
-            async def send(b: bytes) -> None:
-                await ret_char.notify(b)
-
+        async def producer(_send_unused: Callable[[bytes], Awaitable[None]]) -> None:
+            # direct notify
             await _fusion_minimal_stream_loop(
-                send_bytes=send,
+                send_bytes=ret_char.notify,
                 broadcaster=fusion_broadcaster,
-                req_bytes=data,
             )
 
         stream = RpcStream(producer)
