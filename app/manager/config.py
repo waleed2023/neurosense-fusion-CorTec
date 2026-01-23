@@ -64,7 +64,7 @@ MAX_DELAY_MS = int(os.getenv("FUSION_MAX_DELAY_MS", "100"))  # 100 ms max allowe
 # ===== max rates just for jitter =====
 MAX_RATE_HZ_ACC = int(os.getenv("FUSION_MAX_RATE_HZ", "1000")) 
 MAX_RATE_HZ_EMG = int(os.getenv("FUSION_MAX_RATE_HZ_EMG", "50"))
-MAX_RATE_HZ_FUSION = int(os.getenv("FUSION_MAX_RATE_HZ_FUSION", "200")) # max output rate of fused samples to tablet
+MAX_RATE_HZ_FUSION = int(os.getenv("FUSION_MAX_RATE_HZ_FUSION", "833")) # max output rate of fusion service, yo could hier downsample if needed
 
 
 # UUIDs
