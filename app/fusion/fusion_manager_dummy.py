@@ -4,7 +4,7 @@ import asyncio
 from typing import Optional
 
 from app.manager.broadcaster import Broadcaster
-from app.manager.config import MAX_DELAY_MS
+from app.manager.config import MAX_DELAY_MS_DUMMY
 from app.proto import sensor_pb2, fusion_dummy_pb2 as fusion_minimal_pb2
 
 
@@ -29,7 +29,7 @@ class FusionManagerMinimalEvent:
         acc_broadcaster: Broadcaster,
         fusion_broadcaster: Broadcaster,
         *,
-        max_delay_ms: int = MAX_DELAY_MS,
+        max_delay_ms: int = MAX_DELAY_MS_DUMMY,
     ) -> None:
         self._emg_b = emg_broadcaster
         self._acc_b = acc_broadcaster
