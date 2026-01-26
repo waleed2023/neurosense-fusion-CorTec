@@ -18,17 +18,21 @@ import signal
 import sys
 import grpc
 
+from app.measurment.timing_mark_logger import TimingMarkLogger
 from dbus_next.aio import MessageBus
 from dbus_next import BusType
 
 from app.manager.broadcaster import Broadcaster
-from app.manager.config import LOG_PREFIX, MAX_RATE_HZ_EMG, MAX_RATE_HZ_ACC, FUSION_RET
+from app.manager.config import LOG_PREFIX, MAX_RATE_HZ_EMG, MAX_RATE_HZ_ACC, FUSION_RET, SENSOR_METRICS_LOG_FILE
 from app.fusion.fusion_manager import FusionManager
 from app.servers.gatt_core import BleGattApp
 from app.servers.fusion_service import build_fusion_service
 from app.proto import sensor_pb2, sensor_pb2_grpc
 
 
+
+
+_marklog = TimingMarkLogger(log_file=SENSOR_METRICS_LOG_FILE)
 
 # Pull EMG samples from gRPC HAL service into local broadcaster
 async def _grpc_pull_emg(*, stop_evt: asyncio.Event, broadcaster: Broadcaster, host: str, port: int):
@@ -44,7 +48,9 @@ async def _grpc_pull_emg(*, stop_evt: asyncio.Event, broadcaster: Broadcaster, h
             stub = sensor_pb2_grpc.EmgStub(channel)
 
             async for sample in stub.StreamEmg(req):
+               # _marklog.log_recv("Fusion_Feature_ENTRY", sample.hal_idx)
                 await broadcaster.publish(sample)
+                #_marklog.log_send("Fusion_Feature_EXIT", sample.hal_idx)
                 if stop_evt.is_set():
                     break
 
@@ -77,7 +83,9 @@ async def _grpc_pull_acc(*, stop_evt: asyncio.Event, broadcaster: Broadcaster, h
             stub = sensor_pb2_grpc.AccelStub(channel)
 
             async for sample in stub.StreamAccel(req):
+                #_marklog.mark("Fusion_Accel_ENTRY", sample.ts_us)
                 await broadcaster.publish(sample)
+                #_marklog.mark("Fusion_Accel_EXIT", sample.ts_us)
                 if stop_evt.is_set():
                     break
 

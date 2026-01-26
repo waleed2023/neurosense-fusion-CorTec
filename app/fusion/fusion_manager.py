@@ -246,7 +246,7 @@ class FusionManager:
 
             drained += 1
             self._ACC_fusion_idx += 1
-            self._mark("ACCManager_Fusion_in", self._ACC_fusion_idx)
+            self._mark("Fusion_Feature_Accel_ENTRY", self._ACC_fusion_idx)
 
             self._debug_acc_read += 1
             buf.append(sample)
@@ -331,7 +331,7 @@ class FusionManager:
                     await self._fusion_b.publish(fused)
 
                     self.Fusion_idx += 1
-                    self._mark("FusionManager_out", self.Fusion_idx)
+                    self._mark("Fusion_Feature_Accel_EXIT", self.Fusion_idx)
 
                     next_tick_us += self._step_us
                     steps += 1
