@@ -331,7 +331,7 @@ class FusionManager:
                     await self._fusion_b.publish(fused)
 
                     self.Fusion_idx += 1
-                    self._mark("Fusion_Feature_Accel_EXIT", self.Fusion_idx)
+                    self._mark("Fusion_Feature_EXIT", self.Fusion_idx)
 
                     next_tick_us += self._step_us
                     steps += 1
