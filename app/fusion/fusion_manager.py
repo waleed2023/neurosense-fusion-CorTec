@@ -110,7 +110,7 @@ class FusionManager:
         self._acc_b = acc_broadcaster
         self._fusion_b = fusion_broadcaster
 
-        self._window_us = int(window_ms) * 1000
+        self._window_us = int(window_ms) * 1000 # we need to work in microseconds because HAL timestamps are in µs
         self._step_us = max(1, int(step_ms) * 1000)
         self._max_delay_us = max(0, int(max_delay_ms) * 1000)
 
