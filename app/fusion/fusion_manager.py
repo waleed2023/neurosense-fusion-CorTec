@@ -227,7 +227,7 @@ class FusionManager:
 
             drained += 1
             self._BLE_fusion_idx += 1
-            self._mark("BLEManager_Fusion_in", self._BLE_fusion_idx)
+            self._mark("EMG_Fusion_in", self._BLE_fusion_idx)
 
             self._debug_emg_read += 1
             buf.append(sample)
