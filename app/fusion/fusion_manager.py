@@ -168,13 +168,16 @@ class FusionManager:
         self._task = None
 
     @property
+    # not used for now
     def debug_emg_read(self) -> int:
         return self._debug_emg_read
 
     @property
+    # not used for now
     def debug_acc_read(self) -> int:
         return self._debug_acc_read
 
+    # for timestamping
     def _mark(self, point: str, idx: int) -> None:
         self._marklog.mark(point, idx, ns_to_us(now_ns()))
 
@@ -184,6 +187,8 @@ class FusionManager:
         works as filter for all samples with ts_us <= ts_end_us.
         Efficiently pop samples from the left while ts_us <= ts_end_us.
         Assumes samples arrive late in timestamp order.
+         example : buf = [s1(ts=100), s2(ts=150), s3(ts=200)], ts_end_us=150
+         returns [s1, s2], buf becomes [s3]
         """
         ready = []
         while buf and int(getattr(buf[0], "ts_us", 0)) <= ts_end_us:

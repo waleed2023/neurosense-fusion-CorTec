@@ -61,6 +61,7 @@ class FusionManagerMinimalEvent:
             return True
         # Check if the sample is within MAX_DELAY of the reference timestamp. 
         # example : ref=1000, sample=1200, max_delay=300 -> False
+        # example : ref=800, sample=8200, max_delay=4000 -> True
         return abs(int(ref_ts_us) - int(sample_ts_us)) <= self._max_delay_us
 
     def _build_fused(
@@ -72,6 +73,8 @@ class FusionManagerMinimalEvent:
         acc_new: int,
     ) -> fusion_minimal_pb2.FusedMinimalSample:
         # Decide whether the cached samples are fresh enough.
+        # just with 2 variables, no need buffers or windows.
+        # timestapes commes from HAL when the sample was read.
         emg_ok = self._last_emg is not None and self._fresh(
             ref_ts_us=out_ts_us, sample_ts_us=int(self._last_emg.ts_us)
         )

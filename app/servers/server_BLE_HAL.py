@@ -64,14 +64,7 @@ class EmgGrpcServicer(sensor_pb2_grpc.EmgServicer):
 
 # Set up and start the gRPC server
 async def _serve_grpc(broadcaster: Broadcaster, *, host: str, port: int) -> grpc.aio.Server:
-    # max_send_message_length and max_receive_message_length increased to 4MB
-    # max_receive_message_length is important for high-rate streaming, also 4MB
-    server = grpc.aio.server(
-        options=[
-            ("grpc.max_send_message_length", 4 * 1024 * 1024),
-            ("grpc.max_receive_message_length", 4 * 1024 * 1024),
-        ]
-    )
+    server = grpc.aio.server()
     sensor_pb2_grpc.add_EmgServicer_to_server(EmgGrpcServicer(broadcaster), server)
     bind = f"{host}:{port}"
     server.add_insecure_port(bind)
