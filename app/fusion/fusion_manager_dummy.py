@@ -6,7 +6,7 @@ from typing import Optional
 from app.manager.broadcaster import Broadcaster
 from app.manager.config import MAX_DELAY_MS_DUMMY
 from app.proto import sensor_pb2, fusion_dummy_pb2 as fusion_minimal_pb2
-
+from app.manager.config import MAX_DELAY_MS_ACC_DUMMY, MAX_DELAY_MS_EMG_DUMMY
 
 class FusionManagerMinimalEvent:
     """Minimal, event-driven fusion (latest-of-each).
@@ -55,7 +55,7 @@ class FusionManagerMinimalEvent:
         self._task = None
 
     def _fresh(self, *, ref_ts_us: int, sample_ts_us: int, is_emg:bool) -> bool:
-        self._max_delay_us = self.MAX_DELAY_MS_EMG_DUMMY if is_emg else self.MAX_DELAY_MS_ACC_DUMMY
+        self._max_delay_us = MAX_DELAY_MS_EMG_DUMMY if is_emg else MAX_DELAY_MS_ACC_DUMMY
         if ref_ts_us - sample_ts_us <= 0:
             return False
         elif ref_ts_us - sample_ts_us >= self._max_delay_us:
