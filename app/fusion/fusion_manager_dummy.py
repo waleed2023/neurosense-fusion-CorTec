@@ -54,7 +54,7 @@ class FusionManagerMinimalEvent:
         self._task = None
 
     def _fresh(self, *, ref_ts_us: int, sample_ts_us: int, is_emg:bool) -> bool:
-        print( f"ref_ts_us: {ref_ts_us}, sample_ts_us: {sample_ts_us}, is_emg: {is_emg}" )  
+        #print( f"ref_ts_us: {ref_ts_us}, sample_ts_us: {sample_ts_us}, is_emg: {is_emg}" )  
         if sample_ts_us <= 0 or ref_ts_us <= 0:
             return False
         max_delay_ms = MAX_DELAY_MS_EMG_DUMMY if is_emg else MAX_DELAY_MS_ACC_DUMMY
