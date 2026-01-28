@@ -17,10 +17,10 @@ class FusionManagerMinimalEvent:
       - Sample-and-hold the *other* sensor.
       - Optional MAX_DELAY: if the held sample is too old compared to the trigger
         timestamp, mark it invalid (and zero its fields).
-
-    MAX_DELAY semantics:
-      - Uses |trigger_ts_us - held_ts_us| <= MAX_DELAY_US.
-      - This is symmetric and also survives small clock hiccups.
+        time <= max_delay:
+            hold old sample as valid
+        time > max_delay:
+            mark held sample as invalid(zeros)
     """
 
     def __init__(
@@ -54,16 +54,16 @@ class FusionManagerMinimalEvent:
             pass
         self._task = None
 
-    def _fresh(self, *, ref_ts_us: int, sample_ts_us: int) -> bool:
-        if sample_ts_us <= 0:
+    def _fresh(self, *, ref_ts_us: int, sample_ts_us: int, is_emg:bool) -> bool:
+        self._max_delay_us = self.MAX_DELAY_MS_EMG_DUMMY if is_emg else self.MAX_DELAY_MS_ACC_DUMMY
+        if ref_ts_us - sample_ts_us <= 0:
             return False
-        if self._max_delay_us <= 0:
-            return True
-        # Check if the sample is within MAX_DELAY of the reference timestamp. 
-        # example : ref=1000, sample=1200, max_delay=300 -> False
-        # example : ref=800, sample=8200, max_delay=4000 -> True
-        return abs(int(ref_ts_us) - int(sample_ts_us)) <= self._max_delay_us
+        elif ref_ts_us - sample_ts_us >= self._max_delay_us:
+            return False
+        return True
 
+
+    
     def _build_fused(
         self,
         *,
@@ -76,10 +76,10 @@ class FusionManagerMinimalEvent:
         # just with 2 variables, no need buffers or windows.
         # timestapes commes from HAL when the sample was read.
         emg_ok = self._last_emg is not None and self._fresh(
-            ref_ts_us=out_ts_us, sample_ts_us=int(self._last_emg.ts_us)
+            ref_ts_us=out_ts_us, sample_ts_us=int(self._last_emg.ts_us), is_emg=True
         )
         acc_ok = self._last_acc is not None and self._fresh(
-            ref_ts_us=out_ts_us, sample_ts_us=int(self._last_acc.ts_us)
+            ref_ts_us=out_ts_us, sample_ts_us=int(self._last_acc.ts_us), is_emg=False
         )
 
         # If a sensor is stale: expose it as "missing" (valid=false, zeros).
