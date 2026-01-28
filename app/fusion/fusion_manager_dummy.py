@@ -54,14 +54,17 @@ class FusionManagerMinimalEvent:
         self._task = None
 
     def _fresh(self, *, ref_ts_us: int, sample_ts_us: int, is_emg:bool) -> bool:
-        print( f"ref_ts_us: {ref_ts_us}, sample_ts_us: {sample_ts_us}, is_emg: {is_emg}" )
-        self._max_delay_us = MAX_DELAY_MS_EMG_DUMMY if is_emg else MAX_DELAY_MS_ACC_DUMMY
-        if ref_ts_us - sample_ts_us <= 0:
+        print( f"ref_ts_us: {ref_ts_us}, sample_ts_us: {sample_ts_us}, is_emg: {is_emg}" )  
+        if sample_ts_us <= 0 or ref_ts_us <= 0:
             return False
-        elif ref_ts_us - sample_ts_us >= self._max_delay_us:
-            return False
-        return True
-
+        max_delay_ms = MAX_DELAY_MS_EMG_DUMMY if is_emg else MAX_DELAY_MS_ACC_DUMMY
+        max_delay_us = int(max_delay_ms) * 1000  # ms -> µs
+        if max_delay_us <= 0:
+            return True
+        # Sample-and-hold: held sample must be <= trigger timestamp
+        dt_us = int(ref_ts_us) - int(sample_ts_us)
+        # Valid if not from the future and not too old
+        return 0 <= dt_us <= max_delay_us
 
     
     def _build_fused(
