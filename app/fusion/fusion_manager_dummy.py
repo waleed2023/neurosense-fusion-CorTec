@@ -150,6 +150,7 @@ class FusionManagerMinimalEvent:
                 for sensor in done:
                     if sensor is emg_get:
                         result: sensor_pb2.EmgSample = sensor.result()
+                        self._last_emg = result
                         out_ts = int(getattr(result, "ts_us", 0))
                         fused = self._build_fused(
                             out_ts_us=out_ts,
