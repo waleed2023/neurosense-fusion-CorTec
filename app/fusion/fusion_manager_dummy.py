@@ -150,9 +150,6 @@ class FusionManagerMinimalEvent:
                 for sensor in done:
                     if sensor is emg_get:
                         result: sensor_pb2.EmgSample = sensor.result()
-                        self._EMG_fusion_idx += 1
-                        self._mark("Fusion_Dummy_EMG_ENTRY", self._EMG_fusion_idx)
-                        self._last_emg = result
                         out_ts = int(getattr(result, "ts_us", 0))
                         fused = self._build_fused(
                             out_ts_us=out_ts,
@@ -161,16 +158,14 @@ class FusionManagerMinimalEvent:
                             acc_new=0,
                         )
                         seq = int(fused.seq)
-                        self._mark_ts("Fusion_Dummy_EMG_Sensor_Time_Exit", seq, int(fused.ts_us))
+                        self._mark_wall("Fusion_Dummy_EMG_TIME_ENTER", seq)
                         await self._fusion_b.publish(fused)
+                        self._mark_ts("Fusion_Dummy_EMG_Sensor_Time_Enter", seq, int(fused.ts_us))
                         self._mark_wall("Fusion_Dummy_EMG_Wall_Time_Exit", seq)
                         emg_get = asyncio.create_task(emg_q.get()) 
 
                     elif sensor is acc_get:
                         result: sensor_pb2.AccelSample = sensor.result()
-                        self._ACC_fusion_idx += 1
-                        self._mark_ts("Fusion_Dummy_ACC_Sensor_Time_Exit", self._ACC_fusion_idx, int(fused.ts_us))
-                        self._mark_wall("Fusion_Dummy_ACC_Wall_Time_Exit")
                         self._last_acc = result
                         out_ts = int(getattr(result, "ts_us", 0))
                         fused = self._build_fused(
@@ -180,9 +175,10 @@ class FusionManagerMinimalEvent:
                             acc_new=1,
                         )
                         seq = int(fused.seq)
-                        self._mark_ts("Fusion_Dummy_ACC_Sensor_Time_Exit", seq, int(fused.ts_us))
+                        self._mark_wall("Fusion_Dummy_ACC_TIME_ENTER", seq)
                         await self._fusion_b.publish(fused)
                         self._mark_wall("Fusion_Dummy_ACC_Wall_Time_Exit", seq)
+                        self._mark_ts("Fusion_Dummy_ACC_Sensor_Time_EXIT", seq, int(fused.ts_us))
                         acc_get = asyncio.create_task(acc_q.get())
 
         finally:
