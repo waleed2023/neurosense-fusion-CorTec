@@ -227,7 +227,7 @@ class FusionManager:
 
             drained += 1
             self._BLE_fusion_idx += 1
-            self._mark("EMG_Fusion_in", self._BLE_fusion_idx)
+            self._mark("EMG_Feature_Fusion_in", self._BLE_fusion_idx)
 
             self._debug_emg_read += 1
             buf.append(sample)
@@ -329,9 +329,10 @@ class FusionManager:
                     # Compute fused sample and publish
                     fused = self._compute_fused_sample(ts_us=win_end_us)
                     await self._fusion_b.publish(fused)
-
+                    # timestampe for both 
                     self.Fusion_idx += 1
-                    self._mark("Fusion_Feature_EXIT", self.Fusion_idx)
+                    self._mark("Fusion_Feature_Algo_Time_Exit", self.Fusion_idx, int(fused.ts_us))          # Algorithmus-timestamp, prof that my output 1kHz is correct
+                    self._mark("Fusion_Feature_Wall_Time_Exit", self.Fusion_idx)                       # After feature computation (wall-time), real cpu/os time after publishing 
 
                     next_tick_us += self._step_us
                     steps += 1

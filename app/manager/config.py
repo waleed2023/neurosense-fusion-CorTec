@@ -16,6 +16,8 @@ ANALOG_CHAR = os.getenv("ANALOG_CHAR", "00002a58-0000-1000-8000-00805f9b34fb")
 BATTERY_CHAR = os.getenv("BATTERY_CHAR", "00002a19-0000-1000-8000-00805f9b34fb")
 TARGET_MAC = os.getenv("EMG_TARGET_MAC", "")
 TARGET_NAME = os.getenv("EMG_TARGET_NAME", "ANR Corp M40")
+EMG_RX_QUEUE_MAX = int(os.getenv("EMG_RX_QUEUE_MAX", "2048")) # for buffering incoming samples
+EMG_RX_DROP_OLDEST_ON_FULL = os.getenv("EMG_RX_DROP_OLDEST_ON_FULL", "1") not in ("0", "false", "False") # drop oldest when queue full
 
 # clamp VALUE_MAX to reasonable range
 VALUE_MAX = int(os.getenv("VALUE_MAX", "1000")) # max value for EMG channels
@@ -97,7 +99,7 @@ METRICS_LOG_FILE = os.getenv("METRICS_LOG_FILE", "timing_metrics.csv")
 # Sensor metrics log file
 SENSOR_METRICS_LOG_FILE = os.getenv(
     "SENSOR_METRICS_LOG_FILE",
-    "sensor_timing_metrics.csv",
+    "timing_metrics.csv",
 )
 
 

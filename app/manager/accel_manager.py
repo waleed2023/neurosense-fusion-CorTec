@@ -58,6 +58,7 @@ class AccelManager:
 
         self._marklog = TimingMarkLogger(log_file=SENSOR_METRICS_LOG_FILE)
         self._hal_idx = 0
+        self._hal_idx_without_scale = 0
 
     async def stop(self):
         self._stop.set()
@@ -121,6 +122,13 @@ class AccelManager:
         ay = to_s16(a[2], a[3])
         az = to_s16(a[4], a[5])
 
+        # timestamp before scaling to know exact time of raw data read
+        self._hal_idx_without_scale += 1
+        idx = self._hal_idx_without_scale
+        ts_us = ns_to_us(now_ns())
+        self._marklog.mark("ACC_HAL_DATA_WITHOUT_SCALE", idx, ts_us)
+
+
         sf = scale_factor_g(ACCEL_FS_G)
         AX = ax * sf
         AY = ay * sf
@@ -166,7 +174,7 @@ class AccelManager:
 
                         await self.broadcaster.publish(sample)
                         self._marklog.mark("ACC_HAL_OUT", idx, ns_to_us(now_ns()))
-
+                        
                         now = time.perf_counter()
                         if last == 0.0:
                             last = now

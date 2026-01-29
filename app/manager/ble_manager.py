@@ -6,7 +6,6 @@ import struct
 import asyncio
 import random
 from typing import Optional
-
 from bleak import BleakClient, BleakScanner
 
 from .config import (
@@ -20,12 +19,14 @@ from .config import (
     SENSOR_METRICS_LOG_FILE,
     now_ns,
     ns_to_us,
+    EMG_RX_QUEUE_MAX,
+    EMG_RX_DROP_OLDEST_ON_FULL,
 )
 from ..proto import sensor_pb2
 from app.measurment.timing_mark_logger import TimingMarkLogger
 
-EMG_RX_QUEUE_MAX = 2048
-EMG_RX_DROP_OLDEST_ON_FULL = True
+
+
 
 
 class BLEManager:
@@ -147,7 +148,7 @@ class BLEManager:
 
             self._hal_idx += 1
             idx = self._hal_idx
-
+            self._marklog.mark("EMG_HAL_DATA_WITHOUT_SCALE", idx, ts_us)
             self._marklog.mark("EMG_HAL_ENTRY", idx, ts_us)
             self._last_emg_us = ts_us
 
