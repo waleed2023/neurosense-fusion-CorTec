@@ -178,8 +178,11 @@ class FusionManager:
         return self._debug_acc_read
 
     # for timestamping
-    def _mark(self, point: str, idx: int) -> None:
+    def _mark_wall(self, point: str, idx: int) -> None:
         self._marklog.mark(point, idx, ns_to_us(now_ns()))
+
+    def _mark_ts(self, point: str, idx: int, ts_us: int) -> None:
+        self._marklog.mark(point, idx, int(ts_us))
 
     @staticmethod
     def _pop_ready_by_ts_us(buf: Deque, ts_end_us: int) -> list:
@@ -227,7 +230,7 @@ class FusionManager:
 
             drained += 1
             self._BLE_fusion_idx += 1
-            self._mark("EMG_Feature_Fusion_in", self._BLE_fusion_idx)
+            self._mark_wall("EMG_Feature_Fusion_in", self._BLE_fusion_idx)
 
             self._debug_emg_read += 1
             buf.append(sample)
@@ -246,7 +249,7 @@ class FusionManager:
 
             drained += 1
             self._ACC_fusion_idx += 1
-            self._mark("Fusion_Feature_Accel_ENTRY", self._ACC_fusion_idx)
+            self._mark_wall("Fusion_Feature_Accel_ENTRY", self._ACC_fusion_idx)
 
             self._debug_acc_read += 1
             buf.append(sample)
@@ -331,8 +334,8 @@ class FusionManager:
                     await self._fusion_b.publish(fused)
                     # timestampe for both 
                     self.Fusion_idx += 1
-                    self._mark("Fusion_Feature_Algo_Time_Exit", self.Fusion_idx, int(fused.ts_us))          # Algorithmus-timestamp, prof that my output 1kHz is correct
-                    self._mark("Fusion_Feature_Wall_Time_Exit", self.Fusion_idx)                       # After feature computation (wall-time), real cpu/os time after publishing 
+                    self._mark_ts("Fusion_Feature_Algo_Time_Exit", self.Fusion_idx, int(fused.ts_us))          # Algorithmus-timestamp, prof that my output 1kHz is correct
+                    self._mark_wall("Fusion_Feature_Wall_Time_Exit", self.Fusion_idx)                       # After feature computation (wall-time), real cpu/os time after publishing 
 
                     next_tick_us += self._step_us
                     steps += 1
