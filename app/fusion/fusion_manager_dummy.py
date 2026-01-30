@@ -179,7 +179,7 @@ class FusionManagerMinimalEvent:
                         self._mark_wall("Fusion_Dummy_ACC_TIME_ENTER", seq)
                         await self._fusion_b.publish(fused)
                         self._mark_wall("Fusion_Dummy_ACC_Wall_Time_Exit", seq)
-                        self._mark_ts("Fusion_Dummy_ACC_Sensor_Time_EXIT", seq, int(fused.ts_us))
+                        #self._mark_ts("Fusion_Dummy_ACC_Sensor_Time_EXIT", seq, int(fused.ts_us))
                         acc_get = asyncio.create_task(acc_q.get())
 
         finally:

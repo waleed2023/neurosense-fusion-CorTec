@@ -123,10 +123,10 @@ class AccelManager:
         az = to_s16(a[4], a[5])
 
         # timestamp before scaling to know exact time of raw data read
-        self._hal_idx_without_scale += 1
-        idx = self._hal_idx_without_scale
-        ts_us = ns_to_us(now_ns())
-        self._marklog.mark("ACC_HAL_DATA_WITHOUT_SCALE", idx, ts_us)
+        #self._hal_idx_without_scale += 1
+        #idx = self._hal_idx_without_scale
+        #ts_us = ns_to_us(now_ns())
+        #self._marklog.mark("ACC_HAL_DATA_WITHOUT_SCALE", idx, ts_us)
 
 
         sf = scale_factor_g(ACCEL_FS_G)

@@ -148,7 +148,7 @@ class BLEManager:
 
             self._hal_idx += 1
             idx = self._hal_idx
-            self._marklog.mark("EMG_HAL_DATA_WITHOUT_SCALE", idx, ts_us)
+            #self._marklog.mark("EMG_HAL_DATA_WITHOUT_SCALE", idx, ts_us)
             self._marklog.mark("EMG_HAL_ENTRY", idx, ts_us)
             self._last_emg_us = ts_us
 

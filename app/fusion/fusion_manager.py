@@ -334,7 +334,7 @@ class FusionManager:
                     await self._fusion_b.publish(fused)
                     # timestampe for both 
                     self.Fusion_idx += 1
-                    self._mark_ts("Fusion_Feature_Algo_Time_Exit", self.Fusion_idx, int(fused.ts_us))          # Algorithmus-timestamp, prof that my output 1kHz is correct
+                    #self._mark_ts("Fusion_Feature_Algo_Time_Exit", self.Fusion_idx, int(fused.ts_us))          # Algorithmus-timestamp, prof that my output 1kHz is correct
                     self._mark_wall("Fusion_Feature_Wall_Time_Exit", self.Fusion_idx)                       # After feature computation (wall-time), real cpu/os time after publishing 
 
                     next_tick_us += self._step_us
