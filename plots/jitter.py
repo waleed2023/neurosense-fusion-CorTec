@@ -8,7 +8,7 @@ CSV_PATH = "timing_metrics.csv"
 
 # ===== Tuning =====
 MIN_SAMPLES_PER_MARK = 50     # Marks mit weniger Deltas werden übersprungen
-SHOW_FLIERS = False            # Outlier anzeigen
+SHOW_FLIERS = True            # Outlier anzeigen
 # Standard-Boxplot: whiskers = 1.5 * IQR (ruhiger als z.B. 5/95-percentile)
 WHIS = 1.5
 
@@ -83,7 +83,7 @@ def make_boxplot_figure(jit_df: pd.DataFrame, title: str):
         vert=True,
         labels=order,
         showfliers=SHOW_FLIERS,
-        whis=WHIS,
+        whis=(1, 99),
         flierprops=dict(marker='o', markersize=2, linestyle='none'),  # kleine Outlier
         medianprops=dict(linewidth=2),
         boxprops=dict(linewidth=1.2),
