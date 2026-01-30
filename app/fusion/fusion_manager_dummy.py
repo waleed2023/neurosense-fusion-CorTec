@@ -161,7 +161,7 @@ class FusionManagerMinimalEvent:
                         seq = int(fused.seq)
                         self._mark_wall("Fusion_Dummy_EMG_ENTER", seq)
                         await self._fusion_b.publish(fused)
-                        self._mark_ts("Fusion_Dummy_EMG_Sensor_Time_Enter", seq, int(fused.ts_us))
+                        #self._mark_ts("Fusion_Dummy_EMG_Enter", seq, int(fused.ts_us))
                         self._mark_wall("Fusion_Dummy_EMG_Exit", seq)
                         emg_get = asyncio.create_task(emg_q.get()) 
 
