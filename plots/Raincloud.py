@@ -65,9 +65,9 @@ def jitter_us(mark_name: str) -> np.ndarray:
     if len(dt) == 0:
         return np.array([])
     #baseline = np.median(dt)
-    #baseline = np.average(dt)
-    #return np.abs(dt - baseline)
-    return dt
+    baseline = np.average(dt)
+    return np.abs(dt)
+
 
 def jitter_ms(mark_name: str) -> np.ndarray:
     return jitter_us(mark_name) / 1000.0
