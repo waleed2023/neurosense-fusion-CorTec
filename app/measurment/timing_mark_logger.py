@@ -58,7 +58,6 @@ class TimingMarkLogger:
     ) -> None:
         self.log_file = log_file or METRICS_LOG_FILE
         self._enabled = bool(self.log_file)
-        print(f"{AX},{AY},{AZ}")
         self._q: queue.Queue[str] = queue.Queue(maxsize=max_queue)
         self._drop_oldest = drop_oldest_on_full
         self._flush_every = max(1, int(flush_every))
