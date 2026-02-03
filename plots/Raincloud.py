@@ -22,6 +22,7 @@ ACC_JITTER_MARKS = [
     "ACC_HAL_OUT",
     "Fusion_Dummy_ACC_Exit",
     "Fusion_Dummy_ACC_ENTER",
+    "ACC_SENSOR_TS",
 ]
 
 EMG_DELAY_PAIRS = [
@@ -65,6 +66,7 @@ def jitter_us(mark_name: str) -> np.ndarray:
         return np.array([])
     #baseline = np.median(dt)
     #baseline = np.average(dt)
+    #return np.abs(dt - baseline)
     return dt
 
 def jitter_ms(mark_name: str) -> np.ndarray:
@@ -192,5 +194,5 @@ plot_one_window(emg_d_data, emg_d_labels, "EMG – Delay (Raincloud)",  "Delay [
 plot_one_window(acc_j_data, acc_j_labels, "ACC – Jitter (Raincloud)", "Jitter [µs]")
 plot_one_window(acc_d_data, acc_d_labels, "ACC – Delay (Raincloud)",  "Delay [µs]")
 
-#plt.show()
+plt.show()
 

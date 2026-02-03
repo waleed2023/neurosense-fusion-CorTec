@@ -174,7 +174,7 @@ class AccelManager:
                     backoff = 1.0
 
                     while not self._stop.is_set():
-                        AX, AY, AZ, MAG = self._read_accel_g(bus, I2C_ADDR)
+                        #AX, AY, AZ, MAG = self._read_accel_g(bus, I2C_ADDR)
 
                         self._hal_idx += 1
                         idx = self._hal_idx
@@ -182,28 +182,28 @@ class AccelManager:
                         acc_ts_us = self.read_timestamp_us(bus, I2C_ADDR)
                         self._marklog.mark("ACC_SENSOR_TS", idx, acc_ts_us)
                         # epoch timestampe
-                        ts_us = ns_to_us(now_ns())
-                        self._marklog.mark("ACC_HAL_ENTRY", idx, ts_us)
+                        #ts_us = ns_to_us(now_ns())
+                        #self._marklog.mark("ACC_HAL_ENTRY", idx, ts_us)
 
-                        sample = sensor_pb2.AccelSample(
-                            ax=AX,
-                            ay=AY,
-                            az=AZ,
-                            mag=MAG,
-                            ts_us=ts_us,
-                        )
+                        #sample = sensor_pb2.AccelSample(
+                        #    ax=AX,
+                        #    ay=AY,
+                        #    az=AZ,
+                        #    mag=MAG,
+                        #    ts_us=ts_us,
+                        #)
 
 
-                        await self.broadcaster.publish(sample)
-                        self._marklog.mark("ACC_HAL_OUT", idx, ns_to_us(now_ns()))
+                        #await self.broadcaster.publish(sample)
+                        #self._marklog.mark("ACC_HAL_OUT", idx, ns_to_us(now_ns()))
                         
-                        now = time.perf_counter()
-                        if last == 0.0:
-                            last = now
-                        dt = now - last
-                        sleep_t = max(0.0, period - dt)
-                        await asyncio.sleep(sleep_t)
-                        last = time.perf_counter()
+                        #now = time.perf_counter()
+                        #if last == 0.0:
+                        #    last = now
+                        #dt = now - last
+                        #sleep_t = max(0.0, period - dt)
+                        #await asyncio.sleep(sleep_t)
+                        #last = time.perf_counter()
 
                 self._bus = None
 
