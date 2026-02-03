@@ -182,8 +182,8 @@ class AccelManager:
                         acc_ts_us = self.read_timestamp_us(bus, I2C_ADDR)
                         self._marklog.mark("ACC_SENSOR_TS", idx, acc_ts_us)
                         # epoch timestampe
-                        #ts_us = ns_to_us(now_ns())
-                        #self._marklog.mark("ACC_HAL_ENTRY", idx, ts_us)
+                        ts_us = ns_to_us(now_ns())
+                        self._marklog.mark("ACC_HAL_ENTRY", idx, ts_us)
 
                         #sample = sensor_pb2.AccelSample(
                         #    ax=AX,
