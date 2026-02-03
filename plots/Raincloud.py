@@ -2,26 +2,60 @@ import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
 
-# -------------------------
-# CSV laden (wie bisher)
-# -------------------------
-CSV_PATH = "timing_metrics.csv"  # <- anpassen
+# =========================
+# Einstellungen
+# =========================
+CSV_PATH = "timing_metrics.csv"  # <- anpassen!
 COLS = ["kind", "name", "idx", "ts_us", "dt_us", "abs_dev_us", "delay_us"]
 
+# Marks (wie in deinem Logging)
+EMG_JITTER_MARKS = [
+    "EMG_HAL_DATA_WITHOUT_SCALE",
+    "EMG_HAL_ENTRY",
+    "EMG_HAL_OUT",
+    "Fusion_Dummy_EMG_ENTER",
+    "Fusion_Dummy_EMG_Exit",
+]
+ACC_JITTER_MARKS = [
+    "ACC_HAL_DATA_WITHOUT_SCALE",
+    "ACC_HAL_ENTRY",
+    "ACC_HAL_OUT",
+    "Fusion_Dummy_ACC_Exit",
+    "Fusion_Dummy_ACC_ENTER",
+]
+
+EMG_DELAY_PAIRS = [
+    ("EMG_HAL_ENTRY", "EMG_HAL_OUT", "HAL (ENTRY→OUT)"),
+    ("EMG_HAL_ENTRY", "Fusion_Dummy_EMG_Exit", "End-to-end (HAL→out)"),
+]
+ACC_DELAY_PAIRS = [
+    ("ACC_HAL_ENTRY", "ACC_HAL_OUT", "HAL (ENTRY→OUT)"),
+    ("ACC_HAL_ENTRY", "Fusion_Dummy_ACC_Exit", "End-to-end (HAL→out)"),
+]
+
+MAX_SCATTER_POINTS = 5000  # damit es nicht komplett schwarz wird
+
+# =========================
+# CSV laden + vorbereiten
+# =========================
 df = pd.read_csv(CSV_PATH, header=None, names=COLS)
 df = df[df["kind"] == "mark"].copy()
+
 df["idx"] = pd.to_numeric(df["idx"], errors="coerce")
 df["ts_us"] = pd.to_numeric(df["ts_us"], errors="coerce")
 df = df.dropna(subset=["name", "idx", "ts_us"])
 
+# Pro Markname gruppieren
 groups = {n: g.sort_values(["idx", "ts_us"]) for n, g in df.groupby("name")}
-def have(n): return n in groups
 
-# -------------------------
-# Datenfunktionen
-# -------------------------
-def jitter_ms(mark_name: str) -> np.ndarray:
-    """Jitter = |Δt - median(Δt)| pro mark, in ms."""
+def have(n: str) -> bool:
+    return n in groups and len(groups[n]) > 0
+
+# =========================
+# Metriken
+# =========================
+def jitter_us(mark_name: str) -> np.ndarray:
+    """Jitter = |Δt - baseline| in µs."""
     ts = groups[mark_name]["ts_us"].to_numpy()
     if len(ts) < 2:
         return np.array([])
@@ -29,49 +63,66 @@ def jitter_ms(mark_name: str) -> np.ndarray:
     dt = dt[dt > 0]
     if len(dt) == 0:
         return np.array([])
-    baseline = np.median(dt)
-    return np.abs(dt - baseline) / 1000.0
+    #baseline = np.median(dt)
+    #baseline = np.average(dt)
+    return dt
 
-def delay_ms(entry_mark: str, exit_mark: str) -> np.ndarray:
-    """Delay = t_exit - t_entry (über idx gematcht), in ms."""
+def jitter_ms(mark_name: str) -> np.ndarray:
+    return jitter_us(mark_name) / 1000.0
+
+def delay_us(entry_mark: str, exit_mark: str) -> np.ndarray:
+    """
+    Delay = t_exit - t_entry in µs.
+    """
+    # 1) idx-match (wie bisher)
     a = groups[entry_mark][["idx", "ts_us"]].rename(columns={"ts_us": "t_entry"})
     b = groups[exit_mark][["idx", "ts_us"]].rename(columns={"ts_us": "t_exit"})
     m = a.merge(b, on="idx", how="inner")
-    if m.empty:
-        return np.array([])
-    d = (m["t_exit"] - m["t_entry"]).to_numpy()
-    d = d[d >= 0]
-    return d / 1000.0
 
-def take_some(x: np.ndarray, max_points: int = 1500) -> np.ndarray:
-    """Für die Punktwolke: nicht alle Punkte plotten, sonst wird’s schwarz."""
+    if not m.empty:
+        d = (m["t_exit"] - m["t_entry"]).to_numpy()
+        d = d[d >= 0]
+        if len(d) > 0:
+            return d
+
+    # 2) Fallback: zeitbasiert matchen (letzter Entry vor Exit)
+    a_t = groups[entry_mark][["ts_us"]].rename(columns={"ts_us": "t_entry"}).sort_values("t_entry")
+    b_t = groups[exit_mark][["ts_us"]].rename(columns={"ts_us": "t_exit"}).sort_values("t_exit")
+
+    m2 = pd.merge_asof(
+        b_t, a_t,
+        left_on="t_exit",
+        right_on="t_entry",
+        direction="backward"   # letzter entry <= exit
+    ).dropna(subset=["t_entry"])
+
+    d = (m2["t_exit"] - m2["t_entry"]).to_numpy()
+    return d[d >= 0]
+
+def delay_ms(entry_mark: str, exit_mark: str) -> np.ndarray:
+    return delay_us(entry_mark, exit_mark) / 1000.0
+
+# =========================
+# Plot-Helpers (Raincloud)
+# =========================
+def take_some(x: np.ndarray, max_points: int = MAX_SCATTER_POINTS) -> np.ndarray:
+    x = np.asarray(x)
     if len(x) <= max_points:
         return x
     idx = np.random.choice(len(x), size=max_points, replace=False)
     return x[idx]
 
-# -------------------------
-# Raincloud helper
-# -------------------------
 def raincloud(ax, data_list, labels, title, ylabel):
-    """
-    'Raincloud' light:
-      - violin: zeigt Dichte
-      - box: zeigt median/quartile
-      - points: zeigt echte samples (kleine Zufalls-Auswahl)
-    """
     positions = np.arange(1, len(data_list) + 1)
 
-    # Violin (Dichte)
-    parts = ax.violinplot(data_list, positions=positions, showmeans=False, showmedians=False, showextrema=False)
+    ax.violinplot(
+        data_list, positions=positions,
+        showmeans=False, showmedians=False, showextrema=False
+    )
+    ax.boxplot(data_list, positions=positions, widths=0.20, showfliers=False)
 
-    # Box (Median/Quartile)
-    ax.boxplot(data_list, positions=positions, widths=0.18, showfliers=False)
-
-    # Punkte (subset)
     for i, x in enumerate(data_list, start=1):
         xs = take_some(np.asarray(x))
-        # kleines "Jitter" auf der x-Achse, damit Punkte nicht übereinander liegen
         x_pos = i + (np.random.rand(len(xs)) - 0.5) * 0.15
         ax.scatter(x_pos, xs, s=6, alpha=0.25)
 
@@ -81,40 +132,24 @@ def raincloud(ax, data_list, labels, title, ylabel):
     ax.set_xticklabels(labels, rotation=30, ha="right")
     ax.grid(True, axis="y", alpha=0.2)
 
-# -------------------------
-# Was wir plotten wollen (passt zu deiner CSV)
-# -------------------------
-EMG_JITTER_MARKS = [
-    "EMG_HAL_DATA_WITHOUT_SCALE",
-    "EMG_HAL_ENTRY",
-    "EMG_HAL_OUT",
-    "Fusion_Dummy_EMG_Sensor_Time_Enter",
-    "Fusion_Dummy_EMG_TIME_ENTER",
-    "Fusion_Dummy_EMG_Wall_Time_Exit",
-]
-ACC_JITTER_MARKS = [
-    "ACC_HAL_DATA_WITHOUT_SCALE",
-    "ACC_HAL_ENTRY",
-    "ACC_HAL_OUT",
-    "Fusion_Dummy_ACC_Sensor_Time_EXIT",
-    "Fusion_Dummy_ACC_TIME_ENTER",
-    "Fusion_Dummy_ACC_Wall_Time_Exit",
-]
+def plot_one_window(data, labels, title, ylabel, figsize=(10, 4.8)):
+    fig = plt.figure(figsize=figsize)
+    ax = fig.gca()
 
-EMG_DELAY_PAIRS = [
-    ("EMG_HAL_ENTRY", "EMG_HAL_OUT", "HAL (ENTRY→OUT)"),
-    ("Fusion_Dummy_EMG_TIME_ENTER", "Fusion_Dummy_EMG_Wall_Time_Exit", "Fusion (enter→exit)"),
-    ("Fusion_Dummy_EMG_Sensor_Time_Enter", "Fusion_Dummy_EMG_Wall_Time_Exit", "End-to-end (sensor→out)"),
-]
-ACC_DELAY_PAIRS = [
-    ("ACC_HAL_ENTRY", "ACC_HAL_OUT", "HAL (ENTRY→OUT)"),
-    ("Fusion_Dummy_ACC_TIME_ENTER", "Fusion_Dummy_ACC_Wall_Time_Exit", "Fusion (enter→exit)"),
-    ("Fusion_Dummy_ACC_Sensor_Time_EXIT", "Fusion_Dummy_ACC_Wall_Time_Exit", "End-to-end (sensor→out)"),
-]
+    if not data:
+        ax.set_title(title + " (keine Daten)")
+        ax.set_ylabel(ylabel)
+        ax.grid(True, axis="y", alpha=0.2)
+    else:
+        raincloud(ax, data, labels, title, ylabel)
 
-# -------------------------
-# EMG Figure (2 Subplots: Jitter + Delay)
-# -------------------------
+    fig.tight_layout()
+    return fig
+
+# =========================
+# Daten sammeln
+# =========================
+# EMG in ms
 emg_j_data, emg_j_labels = [], []
 for m in EMG_JITTER_MARKS:
     if have(m):
@@ -131,26 +166,11 @@ for a, b, lbl in EMG_DELAY_PAIRS:
             emg_d_data.append(x)
             emg_d_labels.append(lbl)
 
-fig, ax = plt.subplots(2, 1, figsize=(10, 7))
-if emg_j_data:
-    raincloud(ax[0], emg_j_data, emg_j_labels, "EMG – Jitter (Raincloud)", "Jitter [ms]")
-else:
-    ax[0].set_title("EMG – Jitter (keine Daten)")
-
-if emg_d_data:
-    raincloud(ax[1], emg_d_data, emg_d_labels, "EMG – Delay (Raincloud)", "Delay [ms]")
-else:
-    ax[1].set_title("EMG – Delay (keine Daten)")
-
-fig.tight_layout()
-
-# -------------------------
-# ACC Figure (2 Subplots: Jitter + Delay)
-# -------------------------
+# ACC in µs
 acc_j_data, acc_j_labels = [], []
 for m in ACC_JITTER_MARKS:
     if have(m):
-        x = jitter_ms(m)
+        x = jitter_us(m)
         if len(x) > 0:
             acc_j_data.append(x)
             acc_j_labels.append(m)
@@ -158,22 +178,19 @@ for m in ACC_JITTER_MARKS:
 acc_d_data, acc_d_labels = [], []
 for a, b, lbl in ACC_DELAY_PAIRS:
     if have(a) and have(b):
-        x = delay_ms(a, b)
+        x = delay_us(a, b)
         if len(x) > 0:
             acc_d_data.append(x)
             acc_d_labels.append(lbl)
 
-fig, ax = plt.subplots(2, 1, figsize=(10, 7))
-if acc_j_data:
-    raincloud(ax[0], acc_j_data, acc_j_labels, "ACC – Jitter (Raincloud)", "Jitter [ms]")
-else:
-    ax[0].set_title("ACC – Jitter (keine Daten)")
+# =========================
+# 4 getrennte Fenster
+# =========================
+plot_one_window(emg_j_data, emg_j_labels, "EMG – Jitter (Raincloud)", "Jitter [ms]")
+plot_one_window(emg_d_data, emg_d_labels, "EMG – Delay (Raincloud)",  "Delay [ms]")
 
-if acc_d_data:
-    raincloud(ax[1], acc_d_data, acc_d_labels, "ACC – Delay (Raincloud)", "Delay [ms]")
-else:
-    ax[1].set_title("ACC – Delay (keine Daten)")
+plot_one_window(acc_j_data, acc_j_labels, "ACC – Jitter (Raincloud)", "Jitter [µs]")
+plot_one_window(acc_d_data, acc_d_labels, "ACC – Delay (Raincloud)",  "Delay [µs]")
 
-fig.tight_layout()
+#plt.show()
 
-plt.show()

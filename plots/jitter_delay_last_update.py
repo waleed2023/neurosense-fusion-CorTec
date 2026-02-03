@@ -104,7 +104,7 @@ ACC_DELAY_PAIRS = [
 # =========================
 def plot_boxplot(data_list, labels, title, ylabel):
     plt.figure()
-    plt.boxplot(data_list, showfliers=False)
+    plt.boxplot(data_list, showfliers=True)
     plt.xticks(range(1, len(labels) + 1), labels, rotation=35, ha="right")
     plt.title(title)
     plt.ylabel(ylabel)

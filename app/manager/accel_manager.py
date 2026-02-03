@@ -10,17 +10,21 @@ from typing import Optional
 from smbus2 import SMBus
 
 from .config import (
+    BIT_TIMESTAMP_EN,
     I2C_BUS,
     I2C_ADDR,
     ACCEL_ODR_HZ,
     ACCEL_FS_G,
     LOG_PREFIX,
+    REG_CTRL10_C,
     REG_CTRL1_XL,
     REG_CTRL2_G,
     REG_CTRL3_C,
+    REG_TIMESTAMP0,
     REG_WHO_AM_I,
     OUTX_L_XL,
     SENSOR_METRICS_LOG_FILE,
+    TS_TICK_US,
     now_ns,
     ns_to_us,
 )
@@ -60,8 +64,28 @@ class AccelManager:
         self._hal_idx = 0
         self._hal_idx_without_scale = 0
 
+
     async def stop(self):
         self._stop.set()
+
+    def _enable_timestamp(self, bus: SMBus, addr: int) -> None:
+        """Enable internal timestamp counter in LSM6DSOX."""
+        v = bus.read_byte_data(addr, REG_CTRL10_C) & 0xFF
+        bus.write_byte_data(addr, REG_CTRL10_C, (v | BIT_TIMESTAMP_EN) & 0xFF)
+
+    def _read_timestamp_ticks(self, bus: SMBus, addr: int) -> int:
+        """Read 32-bit timestamp ticks (little-endian) from 0x40..0x43."""
+        data = bus.read_i2c_block_data(addr, REG_TIMESTAMP0, 4)
+        ts = (data[0]
+            | (data[1] << 8)
+            | (data[2] << 16)
+            | (data[3] << 24))
+        return ts & 0xFFFFFFFF
+
+    def read_timestamp_us(self, bus: SMBus, addr: int) -> int:
+        """Timestamp in microseconds (nominal)."""
+        return self._read_timestamp_ticks(bus, addr) * TS_TICK_US
+
 
     def _init_sensor(self, bus: SMBus, addr: int):
         who = bus.read_byte_data(addr, REG_WHO_AM_I)
@@ -122,12 +146,6 @@ class AccelManager:
         ay = to_s16(a[2], a[3])
         az = to_s16(a[4], a[5])
 
-        # timestamp before scaling to know exact time of raw data read
-        #self._hal_idx_without_scale += 1
-        #idx = self._hal_idx_without_scale
-        #ts_us = ns_to_us(now_ns())
-        #self._marklog.mark("ACC_HAL_DATA_WITHOUT_SCALE", idx, ts_us)
-
 
         sf = scale_factor_g(ACCEL_FS_G)
         AX = ax * sf
@@ -146,6 +164,7 @@ class AccelManager:
                 with SMBus(I2C_BUS) as bus:
                     self._bus = bus
                     self._init_sensor(bus, I2C_ADDR)
+                    self._enable_timestamp(bus, I2C_ADDR) # enable timesatmp in Sensor
                     sys.stdout.write(
                         f"{LOG_PREFIX} Accel-Streaming started "
                         f"(I2C bus={I2C_BUS} addr=0x{I2C_ADDR:02X})\n"
@@ -159,7 +178,10 @@ class AccelManager:
 
                         self._hal_idx += 1
                         idx = self._hal_idx
-
+                        # timestamp from sensor
+                        acc_ts_us = self.read_timestamp_us(bus, I2C_ADDR)
+                        self._marklog.mark("ACC_SENSOR_TS", idx, acc_ts_us)
+                        # epoch timestampe
                         ts_us = ns_to_us(now_ns())
                         self._marklog.mark("ACC_HAL_ENTRY", idx, ts_us)
 

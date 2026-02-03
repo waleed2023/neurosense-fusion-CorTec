@@ -49,6 +49,12 @@ REG_CTRL3_C         = 0x12
 OUTX_L_XL           = 0x28
 WHOAMI_EXPECTED = {0x6A, 0x6B, 0x69, 0x6c} # possible values for LSM6DS3, LSM6DS4, LSM6DSO
 
+REG_CTRL10_C        = 0x19
+BIT_TIMESTAMP_EN    = 0x20  # CTRL10_C bit5
+REG_TIMESTAMP0      = 0x40  # TIMESTAMP0..3 = 0x40..0x43
+
+TS_TICK_US          = 25    # nominal: 1 tick = 25 µs
+
 
 # ===== Fusion =====
 WINDOW_MS = int(os.getenv("FUSION_WINDOW_MS", "400"))  # time window for fusion in ms

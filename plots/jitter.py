@@ -1,126 +1,71 @@
-import re
 import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
 
-# ===== Input =====
-CSV_PATH = "timing_metrics.csv"
+CSV_PATH = "timing_metrics.csv"   # ggf. anpassen
 
-# ===== Tuning =====
-MIN_SAMPLES_PER_MARK = 50     # Marks mit weniger Deltas werden übersprungen
-SHOW_FLIERS = True            # Outlier anzeigen
-# Standard-Boxplot: whiskers = 1.5 * IQR (ruhiger als z.B. 5/95-percentile)
-WHIS = 1.5
-
-# ===== Pattern: HAL vs Fusion getrennt (anpassbar!) =====
-PAT_ACC_HAL   = r"ACC_HAL"
-PAT_EMG_HAL   = r"EMG_HAL"
-PAT_ACC_FUSION = r"Fusion.*ACC"   # z.B. "Fusion_Dummy_ACC_..."
-PAT_EMG_FUSION = r"Fusion.*EMG"   # z.B. "Fusion_Dummy_EMG_..."
-
-# ===== CSV laden =====
-COLS = ["kind", "name", "idx", "ts_us", "dt_us", "abs_dev_us", "delay_us"]
-df = pd.read_csv(CSV_PATH, header=None, names=COLS)
+cols = ["kind", "name", "idx", "ts_us", "dt_us", "abs_dev_us", "delay_us"]
+df = pd.read_csv(CSV_PATH, header=None, names=cols)
 
 df["ts_us"] = pd.to_numeric(df["ts_us"], errors="coerce")
 df = df.dropna(subset=["ts_us", "name"])
-df = df[df["kind"].astype(str).str.lower().eq("mark")]
+df["name"] = df["name"].astype(str)
 
-def compute_jitter_ms_for_mark(mark_name: str):
-    ts = df.loc[df["name"] == mark_name, "ts_us"].sort_values().to_numpy()
-    if ts.size < 2:
-        return None
-    dt = np.diff(ts)
-    dt = dt[dt > 0]  # nur sinnvolle Deltas
-    if dt.size < MIN_SAMPLES_PER_MARK:
-        return None
-    nominal = np.median(dt)
-    jitter_ms = np.abs(dt - nominal) / 1000.0
-    return jitter_ms
+OUTLIER_FACTOR = 5.0  # lange Pausen raus (reconnect/stop etc.)
 
-def names_by_regex(include_pat: str, exclude_pat: str | None = None):
-    inc = re.compile(include_pat, re.IGNORECASE)
-    exc = re.compile(exclude_pat, re.IGNORECASE) if exclude_pat else None
-    out = []
-    for n in df["name"].unique():
-        s = str(n)
-        if inc.search(s) and (exc is None or not exc.search(s)):
-            out.append(n)
-    return sorted(out)
-
-def build_jitter_df(names):
-    rows = []
-    for n in names:
-        jit = compute_jitter_ms_for_mark(n)
-        if jit is None:
+def compute_jitter_by_name(df_in: pd.DataFrame) -> dict[str, np.ndarray]:
+    out = {}
+    for name, g in df_in.groupby("name"):
+        g = g.sort_values("ts_us")
+        dt = g["ts_us"].diff().astype("float64")
+        dt = dt[dt > 0]
+        if len(dt) < 3:
             continue
-        rows.append(pd.DataFrame({"name": n, "jitter_ms": jit}))
-    if not rows:
-        return pd.DataFrame(columns=["name", "jitter_ms"])
-    return pd.concat(rows, ignore_index=True)
 
-def make_boxplot_figure(jit_df: pd.DataFrame, title: str):
-    if jit_df.empty:
-        print(f"[WARN] Keine Daten für: {title}")
-        return None
+        expected = float(dt.median())
+        lo, hi = expected / OUTLIER_FACTOR, expected * OUTLIER_FACTOR
+        dt_f = dt[(dt >= lo) & (dt <= hi)]
 
-    # sortiert nach median jitter
-    order = (
-        jit_df.groupby("name")["jitter_ms"]
-        .median()
-        .sort_values()
-        .index
-        .tolist()
-    )
+        out[name] = (dt_f - expected).abs().to_numpy()
+    return out
 
-    data = [jit_df.loc[jit_df["name"] == nm, "jitter_ms"].to_numpy() for nm in order]
+def violin_like_gallery(j_by_name: dict[str, np.ndarray], title: str):
+    if not j_by_name:
+        print(f"{title}: keine Daten")
+        return
 
-    fig_h = max(5, 0.33 * len(order))
-    fig, ax = plt.subplots(figsize=(12, fig_h))
+    names = sorted(j_by_name.keys(), key=lambda n: len(j_by_name[n]), reverse=True)
+    data = [j_by_name[n] for n in names]
+    pos = np.arange(1, len(names) + 1)
 
-    ax.boxplot(
+    # pro Violin dieselben Quantile (wie im Matplotlib-Beispiel via `quantiles=...`) :contentReference[oaicite:1]{index=1}
+    quantiles = [[0.25, 0.5, 0.75] for _ in data]
+
+    fig, ax = plt.subplots(figsize=(12, 5))
+    ax.violinplot(
         data,
-        vert=True,
-        labels=order,
-        showfliers=SHOW_FLIERS,
-        whis=(1, 99),
-        flierprops=dict(marker='o', markersize=2, linestyle='none'),  # kleine Outlier
-        medianprops=dict(linewidth=2),
-        boxprops=dict(linewidth=1.2),
-        whiskerprops=dict(linewidth=1.2),
-        capprops=dict(linewidth=1.2),
+        pos,
+        points=100,            # wie im Beispiel: KDE-Auflösung :contentReference[oaicite:2]{index=2}
+        widths=0.7,
+        showmeans=True,
+        showmedians=True,
+        showextrema=True,
+        bw_method="silverman", # wie im Beispiel (alternativ: 0.5) :contentReference[oaicite:3]{index=3}
+        quantiles=quantiles    # Quantil-Linien im Violin :contentReference[oaicite:4]{index=4}
+        # side="both"          # optional: "low"/"high" wie im Beispiel :contentReference[oaicite:5]{index=5}
     )
 
     ax.set_title(title)
-    ax.set_xlabel("Jitter |Δt − median(Δt)| [ms]")
-    ax.grid(True, axis="x", alpha=0.3)
+    ax.set_ylabel("Jitter [µs]")
+    ax.set_xticks(pos)
+    ax.set_xticklabels(names, rotation=35, ha="right")
+    fig.tight_layout()
 
-    info = f"Marks={len(order)} | MIN_SAMPLES_PER_MARK={MIN_SAMPLES_PER_MARK} | whis={WHIS} | outliers={SHOW_FLIERS}"
-    ax.text(
-        0.99, 0.99, info,
-        transform=ax.transAxes,
-        ha="right", va="top", fontsize=9,
-        bbox=dict(boxstyle="round,pad=0.3", facecolor="white", alpha=0.9, edgecolor="none"),
-    )
+# --- Split ACC vs EMG (nach Name) ---
+acc_df = df[df["name"].str.contains("ACC", case=False, na=False)]
+emg_df = df[df["name"].str.contains("EMG", case=False, na=False)]
 
-    return fig
+violin_like_gallery(compute_jitter_by_name(acc_df), "Jitter: ACC (Matplotlib-Gallery Violin)")
+violin_like_gallery(compute_jitter_by_name(emg_df), "Jitter: EMG (Matplotlib-Gallery Violin)")
 
-# ===== 4 Gruppen =====
-acc_hal_names   = names_by_regex(PAT_ACC_HAL)
-emg_hal_names   = names_by_regex(PAT_EMG_HAL)
-acc_fus_names   = names_by_regex(PAT_ACC_FUSION, exclude_pat=PAT_ACC_HAL)
-emg_fus_names   = names_by_regex(PAT_EMG_FUSION, exclude_pat=PAT_EMG_HAL)
-
-acc_hal_df = build_jitter_df(acc_hal_names)
-emg_hal_df = build_jitter_df(emg_hal_names)
-acc_fus_df = build_jitter_df(acc_fus_names)
-emg_fus_df = build_jitter_df(emg_fus_names)
-
-# ===== 4 Figuren erzeugen (noch NICHT show) =====
-make_boxplot_figure(acc_hal_df, "ACC — HAL jitter pro Mark")
-make_boxplot_figure(acc_fus_df, "ACC — Fusion jitter pro Mark")
-make_boxplot_figure(emg_hal_df, "EMG — HAL jitter pro Mark")
-make_boxplot_figure(emg_fus_df, "EMG — Fusion jitter pro Mark")
-
-# ===== Alle gleichzeitig anzeigen =====
 plt.show()
