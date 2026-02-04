@@ -120,3 +120,36 @@ def now_ns() -> int:
 
 def ns_to_us(ns: int) -> int:
     return ns // 1_000
+
+
+
+
+# =========================
+# LSM6DSOX FIFO (ACC)
+# =========================
+ACC_USE_FIFO = True
+
+# Watermark optional (wir pollen DIFF_FIFO, Watermark ist hier nur “nice to have”)
+ACC_FIFO_WTM_WORDS = 16
+
+# Damit ein run-Loop nicht “zu lange” FIFO drain’t
+ACC_FIFO_MAX_DRAIN_WORDS = 64
+
+# SMBus block-read ist i.d.R. auf 32 Bytes begrenzt → 4 FIFO-words = 4*7 = 28 Bytes passt
+ACC_FIFO_READ_WORDS_PER_CALL = 4
+
+# FIFO registers (LSM6DSOX)
+REG_FIFO_CTRL1 = 0x07
+REG_FIFO_CTRL2 = 0x08
+REG_FIFO_CTRL3 = 0x09
+REG_FIFO_CTRL4 = 0x0A
+REG_FIFO_STATUS1 = 0x3A
+REG_FIFO_STATUS2 = 0x3B
+REG_FIFO_DATA_OUT_TAG = 0x78
+
+# FIFO modes (FIFO_CTRL4.FIFO_MODE[2:0])
+FIFO_MODE_BYPASS = 0x00
+FIFO_MODE_CONTINUOUS = 0x06   # 0b110 continuous mode
+
+# FIFO TAG (TAG_SENSOR[4:0]) für Accelerometer “NC”
+FIFO_TAG_ACCEL_NC = 0x02
