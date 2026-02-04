@@ -168,99 +168,65 @@ class BLEManager:
             sys.stderr.write(f"{LOG_PREFIX} on_emg error: {e}\n")
 
     async def run(self):
-            """
-            Main loop for the BLE Manager. 
-            Connects to the sensor, manages notifications, and ensures no duplicate registrations occur.
-            """
-            # Capture current loop and ensure the publisher worker is running
-            self._loop = asyncio.get_running_loop()
-            if not self._publisher_task or self._publisher_task.done():
-                self._publisher_task = asyncio.create_task(self._publisher_worker())
+        # capture loop + start publisher worker once
+        self._loop = asyncio.get_running_loop()
+        if not self._publisher_task or self._publisher_task.done():
+            self._publisher_task = asyncio.create_task(self._publisher_worker())
 
-            # Event for immediate connection-loss detection
-            disconnected_event = asyncio.Event()
-
-            def disconnect_callback(client):
-                sys.stdout.write(f"{LOG_PREFIX} BLE: Device disconnected callback\n")
-                disconnected_event.set()
-
-            backoff = 1.0
-            while not self._stop.is_set():
-                disconnected_event.clear()
-                client = None
-                
-                try:
-                    # 1. Resolve target MAC address
-                    mac = await self._resolve_mac()
-                    if not mac:
-                        await asyncio.sleep(backoff + random.uniform(0, 0.5))
-                        backoff = min(backoff * 2, 10)
-                        continue
-
-                    sys.stdout.write(f"{LOG_PREFIX} connecting to {mac} ...\n")
-                    
-                    # 2. Connect using BleakClient with disconnect callback
-                    async with BleakClient(
-                        mac, 
-                        timeout=15.0, 
-                        disconnected_callback=disconnect_callback
-                    ) as client:
-                        self._client = client
-                        self._battery = 255
-
-                        # Read battery level once upon connection
-                        try:
-                            b = await client.read_gatt_char(BATTERY_CHAR)
-                            if b and len(b) >= 1:
-                                self._battery = int(b[0])
-                            sys.stdout.write(f"{LOG_PREFIX} Battery {self._battery}%\n")
-                        except Exception:
-                            sys.stderr.write(f"{LOG_PREFIX} Battery read error\n")
-
-                        # 3. FIX: Stop existing notifications before starting new ones
-                        # This prevents duplicate 'on_emg' calls if BlueZ has ghost registrations.
-                        try:
-                            await client.stop_notify(ANALOG_CHAR)
-                        except Exception:
-                            pass 
-
-                        # 4. Start notifications
-                        await client.start_notify(ANALOG_CHAR, self._on_emg)
-                        sys.stdout.write(f"{LOG_PREFIX} EMG Notify active\n")
-
-                        backoff = 1.0
-                        self._last_emg_us = ns_to_us(now_ns())
-
-                        # 5. Monitoring loop
-                        while not disconnected_event.is_set() and not self._stop.is_set():
-                            # Use a longer sleep; the callback handles the actual data reception
-                            await asyncio.sleep(1.0)
-
-                            # Check for idle timeout (no data received)
-                            if self._idle_timeout_us > 0 and self._last_emg_us:
-                                now_us = ns_to_us(now_ns())
-                                if (now_us - self._last_emg_us) > self._idle_timeout_us:
-                                    sys.stdout.write(
-                                        f"{LOG_PREFIX} no EMG for {EMG_IDLE_TIMEOUT_MS}ms → reconnect\n"
-                                    )
-                                    break
-
-                except asyncio.CancelledError:
-                    sys.stdout.write(f"{LOG_PREFIX} BLE: Run task cancelled\n")
-                    break
-                except Exception as e:
-                    sys.stdout.write(f"{LOG_PREFIX} BLE-Error: {e}\n")
+        backoff = 1.0
+        while not self._stop.is_set():
+            try:
+                mac = await self._resolve_mac()
+                if not mac:
                     await asyncio.sleep(backoff + random.uniform(0, 0.5))
                     backoff = min(backoff * 2, 10)
-                finally:
-                    # 6. Ensure notifications are stopped and client is cleared on exit
-                    if client and client.is_connected:
-                        try:
-                            await client.stop_notify(ANALOG_CHAR)
-                        except Exception:
-                            pass
-                    self._client = None
+                    continue
 
-            # Stop the worker when the main loop exits
-            if self._publisher_task and not self._publisher_task.done():
-                self._publisher_task.cancel()
+                sys.stdout.write(f"{LOG_PREFIX} connecting to {mac} .\n")
+                async with BleakClient(mac, timeout=15.0) as client:
+                    self._client = client
+                    self._battery = 255
+
+                    try:
+                        b = await client.read_gatt_char(BATTERY_CHAR)
+                        if b and len(b) >= 1:
+                            self._battery = int(b[0])
+                        sys.stdout.write(f"{LOG_PREFIX} Battery {self._battery}%\n")
+                    except Exception:
+                        sys.stderr.write(f"{LOG_PREFIX} Battery read error\n")
+
+                    await client.start_notify(ANALOG_CHAR, self._on_emg)
+                    sys.stdout.write(f"{LOG_PREFIX} EMG Notify active\n")
+
+                    backoff = 1.0
+                    self._last_emg_us = ns_to_us(now_ns())
+
+                    while client.is_connected and not self._stop.is_set():
+                        await asyncio.sleep(0.5)
+
+                        if self._idle_timeout_us > 0 and self._last_emg_us:
+                            now_us = ns_to_us(now_ns())
+                            if (now_us - self._last_emg_us) > self._idle_timeout_us:
+                                sys.stdout.write(
+                                    f"{LOG_PREFIX} no EMG for {EMG_IDLE_TIMEOUT_MS}ms → reconnect\n"
+                                )
+                                await client.disconnect()
+                                break
+
+                    try:
+                        await client.stop_notify(ANALOG_CHAR)
+                    except Exception:
+                        sys.stderr.write(f"{LOG_PREFIX} EMG Notify stop error\n")
+
+            except asyncio.CancelledError:
+                sys.stdout.write(f"{LOG_PREFIX} BLE: Cancelled\n")
+                break
+            except Exception as e:
+                sys.stdout.write(f"{LOG_PREFIX} BLE: {e}\n")
+                await asyncio.sleep(backoff + random.uniform(0, 0.5))
+                backoff = min(backoff * 2, 10)
+            finally:
+                self._client = None
+
+        if self._publisher_task and not self._publisher_task.done():
+            self._publisher_task.cancel()
