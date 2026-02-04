@@ -169,8 +169,8 @@ class AccelManager:
                         f"{LOG_PREFIX} Accel-Streaming started "
                         f"(I2C bus={I2C_BUS} addr=0x{I2C_ADDR:02X})\n"
                     )
-
-                    last = 0.0
+                    next_call = time.perf_counter()
+                    #last = 0.0
                     backoff = 1.0
 
                     while not self._stop.is_set():
@@ -196,14 +196,20 @@ class AccelManager:
 
                         await self.broadcaster.publish(sample)
                         self._marklog.mark("ACC_HAL_OUT", idx, ns_to_us(now_ns()))
+                        next_call += period
+                        sleep_t = next_call - time.perf_counter()
+                        if sleep_t > 0:
+                            await asyncio.sleep(sleep_t)
+                        else:
+                            next_call = time.perf_counter
                         
-                        now = time.perf_counter()
-                        if last == 0.0:
-                            last = now
-                        dt = now - last
-                        sleep_t = max(0.0, period - dt)
-                        await asyncio.sleep(sleep_t)
-                        last = time.perf_counter()
+                        # now = time.perf_counter()
+                        # if last == 0.0:
+                        #     last = now
+                        # dt = now - last
+                        # sleep_t = max(0.0, period - dt)
+                        # await asyncio.sleep(sleep_t)
+                        # last = time.perf_counter()
 
                 self._bus = None
 
