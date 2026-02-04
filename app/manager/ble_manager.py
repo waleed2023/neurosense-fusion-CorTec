@@ -169,15 +169,15 @@ class BLEManager:
 
     async def run(self):
             """
-            Main loop of the BLE Manager. 
-            Connects to the sensor, activates notifications, and monitors the connection.
+            Main loop for the BLE Manager. 
+            Connects to the sensor, manages notifications, and ensures no duplicate registrations occur.
             """
-            # Capture loop + start publisher worker once
+            # Capture current loop and ensure the publisher worker is running
             self._loop = asyncio.get_running_loop()
             if not self._publisher_task or self._publisher_task.done():
                 self._publisher_task = asyncio.create_task(self._publisher_worker())
 
-            # Event for immediate disconnect detection
+            # Event for immediate connection-loss detection
             disconnected_event = asyncio.Event()
 
             def disconnect_callback(client):
@@ -190,7 +190,7 @@ class BLEManager:
                 client = None
                 
                 try:
-                    # 1. Resolve MAC address
+                    # 1. Resolve target MAC address
                     mac = await self._resolve_mac()
                     if not mac:
                         await asyncio.sleep(backoff + random.uniform(0, 0.5))
@@ -199,7 +199,7 @@ class BLEManager:
 
                     sys.stdout.write(f"{LOG_PREFIX} connecting to {mac} ...\n")
                     
-                    # 2. Establish connection with BleakClient
+                    # 2. Connect using BleakClient with disconnect callback
                     async with BleakClient(
                         mac, 
                         timeout=15.0, 
@@ -208,7 +208,7 @@ class BLEManager:
                         self._client = client
                         self._battery = 255
 
-                        # Read battery status once
+                        # Read battery level once upon connection
                         try:
                             b = await client.read_gatt_char(BATTERY_CHAR)
                             if b and len(b) >= 1:
@@ -217,12 +217,12 @@ class BLEManager:
                         except Exception:
                             sys.stderr.write(f"{LOG_PREFIX} Battery read error\n")
 
-                        # 3. CRITICAL: Clean up previous notifications to prevent duplicates
-                        # This ensures BlueZ doesn't have "ghost" registrations
+                        # 3. FIX: Stop existing notifications before starting new ones
+                        # This prevents duplicate 'on_emg' calls if BlueZ has ghost registrations.
                         try:
                             await client.stop_notify(ANALOG_CHAR)
                         except Exception:
-                            pass # Ignore if none were active
+                            pass 
 
                         # 4. Start notifications
                         await client.start_notify(ANALOG_CHAR, self._on_emg)
@@ -233,10 +233,10 @@ class BLEManager:
 
                         # 5. Monitoring loop
                         while not disconnected_event.is_set() and not self._stop.is_set():
-                            # Longer sleep because disconnected_callback handles drops immediately
+                            # Use a longer sleep; the callback handles the actual data reception
                             await asyncio.sleep(1.0)
 
-                            # Idle-Timeout Check: Reconnect if no data arrives
+                            # Check for idle timeout (no data received)
                             if self._idle_timeout_us > 0 and self._last_emg_us:
                                 now_us = ns_to_us(now_ns())
                                 if (now_us - self._last_emg_us) > self._idle_timeout_us:
@@ -250,20 +250,17 @@ class BLEManager:
                     break
                 except Exception as e:
                     sys.stdout.write(f"{LOG_PREFIX} BLE-Error: {e}\n")
-                    # Backoff on connection errors
                     await asyncio.sleep(backoff + random.uniform(0, 0.5))
                     backoff = min(backoff * 2, 10)
                 finally:
-                    # 6. Explicit cleanup when exiting the context
+                    # 6. Ensure notifications are stopped and client is cleared on exit
                     if client and client.is_connected:
                         try:
-                            sys.stdout.write(f"{LOG_PREFIX} stopping notifications...\n")
                             await client.stop_notify(ANALOG_CHAR)
                         except Exception:
                             pass
                     self._client = None
-                    sys.stdout.write(f"{LOG_PREFIX} Connection context closed\n")
 
-            # Shutdown worker when run() stops
+            # Stop the worker when the main loop exits
             if self._publisher_task and not self._publisher_task.done():
                 self._publisher_task.cancel()
