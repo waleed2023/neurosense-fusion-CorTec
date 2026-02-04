@@ -196,26 +196,13 @@ class AccelManager:
 
                         await self.broadcaster.publish(sample)
                         self._marklog.mark("ACC_HAL_OUT", idx, ns_to_us(now_ns()))
-
+                        
                         next_call += period
-                        now = time.perf_counter()
-                        sleep_t = next_call - now
-
-                        if sleep_t > 0.1:  # Nur schlafen, wenn mehr als 1ms Zeit ist
+                        sleep_t = next_call - time.perf_counter()
+                        if sleep_t > 0:
                             await asyncio.sleep(sleep_t)
-                        elif sleep_t <= 0 and sleep_t > -period:
-                            # Wir sind knapp dran, sofort weitermachen ohne Context-Switch
-                            pass 
                         else:
-                            # Wir hängen hinterher, Zeitstempel für nächsten Aufruf anpassen
-                            next_call = now
-                        # optized
-                        # next_call += period
-                        # sleep_t = next_call - time.perf_counter()
-                        # if sleep_t > 0:
-                        #     await asyncio.sleep(sleep_t)
-                        # else:
-                        #     next_call = time.perf_counter()
+                            next_call = time.perf_counter()
                         
                         # now = time.perf_counter()
                         # if last == 0.0:
