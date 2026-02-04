@@ -8,7 +8,7 @@ from matplotlib.legend_handler import HandlerTuple
 # =========================
 # Einstellungen
 # =========================
-CSV_PATH = "timing_metrics_1.csv"  # <- anpassen!
+CSV_PATH = "acc_hal.csv"  # <- anpassen!
 COLS = ["kind", "name", "idx", "ts_us", "dt_us", "abs_dev_us", "delay_us"]
 
 # Marks (wie in deinem Logging)
@@ -22,6 +22,7 @@ EMG_JITTER_FUSION_MARKS = [
 ]
 ACC_JITTER_MARKS = [
     "ACC_HAL_ENTRY",
+    "ACC_HAL_OUT"
 ]
 
 ACC_JITTER_FUSION_MARKS = [

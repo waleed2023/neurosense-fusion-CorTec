@@ -28,7 +28,7 @@ GRPC_HOST = os.getenv("GRPC_HOST", "0.0.0.0")
 GRPC_PORT = int(os.getenv("GRPC_PORT", "50051"))
 
 # Streaming / Backpressure
-CLIENT_QUEUE_MAX = int(os.getenv("CLIENT_QUEUE_MAX", "2024"))  # max Samples pro Client
+CLIENT_QUEUE_MAX = int(os.getenv("CLIENT_QUEUE_MAX", "1024"))  # max Samples pro Client
 DROP_OLDEST_ON_FULL = os.getenv("DROP_OLDEST_ON_FULL", "1") not in ("0", "false", "False") # default: drop oldest
 
 
