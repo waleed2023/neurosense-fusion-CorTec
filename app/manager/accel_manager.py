@@ -196,7 +196,7 @@ class AccelManager:
                         )
 
 
-                        await self.broadcaster.publish(sample)
+                        #await self.broadcaster.publish(sample)
                         if (idx % MARK_EVERY) == 0:
                             self._marklog.mark("ACC_HAL_OUT", idx, ns_to_us(now_ns()))
                         
