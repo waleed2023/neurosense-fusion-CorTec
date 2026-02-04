@@ -17,7 +17,7 @@ import sys
 import grpc
 
 from app.manager.broadcaster import Broadcaster
-from app.manager.accel_manager_old import AccelManager
+from app.manager.accel_manager import AccelManager
 from app.manager.config import LOG_PREFIX, GRPC_HOST, MAX_RATE_HZ_ACC
 from app.proto import sensor_pb2, sensor_pb2_grpc
 
