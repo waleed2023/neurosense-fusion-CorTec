@@ -172,7 +172,6 @@ class AccelManager:
 
                     last = 0.0
                     backoff = 1.0
-                    MARK_EVERY = 10
 
                     while not self._stop.is_set():
                         AX, AY, AZ, MAG = self._read_accel_g(bus, I2C_ADDR)
@@ -184,8 +183,7 @@ class AccelManager:
                         #self._marklog.mark("ACC_SENSOR_TS", idx, acc_ts_us)
                         # epoch timestampe
                         ts_us = ns_to_us(now_ns())
-                        if (idx % MARK_EVERY) == 0:
-                            self._marklog.mark("ACC_HAL_ENTRY", idx, ts_us)
+                        self._marklog.mark("ACC_HAL_ENTRY", idx, ts_us)
 
                         sample = sensor_pb2.AccelSample(
                             ax=AX,
@@ -197,8 +195,7 @@ class AccelManager:
 
 
                         #await self.broadcaster.publish(sample)
-                        if (idx % MARK_EVERY) == 0:
-                            self._marklog.mark("ACC_HAL_OUT", idx, ns_to_us(now_ns()))
+                        self._marklog.mark("ACC_HAL_OUT", idx, ns_to_us(now_ns()))
                         
                         now = time.perf_counter()
                         if last == 0.0:
