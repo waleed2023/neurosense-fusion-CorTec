@@ -201,7 +201,7 @@ class AccelManager:
                         if sleep_t > 0:
                             await asyncio.sleep(sleep_t)
                         else:
-                            next_call = time.perf_counter
+                            next_call = time.perf_counter()
                         
                         # now = time.perf_counter()
                         # if last == 0.0:
