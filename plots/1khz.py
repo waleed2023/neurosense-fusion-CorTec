@@ -87,7 +87,7 @@ def main():
     df = load_csv(sys.argv[1])
 
     print("=== EMG ===")
-    report(df, EMG_ENTRY,  do_merge=True)   # EMG: merge double points
+    report(df, EMG_ENTRY,  do_merge=False)   # EMG: merge double points
     report(df, EMG_FUSION, do_merge=False)  # Fusion: normal
 
     print("\n=== ACC ===")
