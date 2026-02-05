@@ -37,8 +37,11 @@ class AccelGrpcServicer(sensor_pb2_grpc.AccelServicer):
         request: sensor_pb2.AccelSubscribeRequest,
         context: grpc.aio.ServicerContext,
     ):
+        print("buffer subscribe")
         q = await self._buffer.subscribe()
+        print("starting accel")
         acc_task = asyncio.create_task(self._accel_manager.run(), name="accel-manager")
+        print("start sending data.")
         try:
             # Throttle as "max samples per second" (drop if too fast)
             # max_rate_hz from client request in case the client(my case flutter/dart app) wants to limit rate, otherwise use MAX_RATE_HZ_ACC
