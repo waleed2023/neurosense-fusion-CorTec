@@ -194,7 +194,7 @@ class AccelManager:
                         )
 
 
-                        await self.broadcaster.publish(sample)
+                        #await self.broadcaster.publish(sample)
                         self._marklog.mark("ACC_HAL_OUT", idx, ns_to_us(now_ns()))
                         
                         next_call += period
