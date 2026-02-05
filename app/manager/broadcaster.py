@@ -31,9 +31,10 @@ class Broadcaster:
                 
                 #await q.put(item)
                 try:
+                    print("adding a value.")
                     await q.put(item)
                 except: 
-                    print("erro has happend")
+                    print("erro has happend.")
 
                 # try:
                 #     await q.put(item)
