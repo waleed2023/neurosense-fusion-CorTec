@@ -11,6 +11,7 @@ class Broadcaster:
     When the queue is full, either the oldest entry is dropped (according to policy) or the new sample is discarded.
     """
     def __init__(self):
+        print("A new broadcaster was created.")
         self._subs: Set[asyncio.Queue] = set()
         self._lock = asyncio.Lock()
 
