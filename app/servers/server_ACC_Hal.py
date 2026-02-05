@@ -86,7 +86,7 @@ async def main_async():
     grpc_port = int(os.getenv("GRPC_PORT_ACC", str(50052)))
     grpc_host = os.getenv("GRPC_HOST", GRPC_HOST)
 
-    grpc_server = await _bulild_grpc(acc_b, acc_mgr, host=grpc_host, port=grpc_port)
+    grpc_server = await _bulild_grpc(acc_b, host=grpc_host, port=grpc_port)
     await asyncio.sleep(1)
     acc_task = asyncio.create_task(acc_mgr.run(), name="accel-manager")
 
