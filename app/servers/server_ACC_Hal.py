@@ -48,6 +48,7 @@ class AccelGrpcServicer(sensor_pb2_grpc.AccelServicer):
             last = 0.0
 
             while True:
+                print("Sending a sample.")
                 sample: sensor_pb2.AccelSample = await q.get() # get sample from broadcaster
 
                 if interval > 0.0:
