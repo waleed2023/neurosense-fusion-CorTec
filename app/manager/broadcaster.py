@@ -28,19 +28,26 @@ class Broadcaster:
         async with self._lock:
             dead = []
             for q in self._subs:
+                
+                #await q.put(item)
                 try:
-                    q.put_nowait(item)
-                except asyncio.QueueFull:
-                    if DROP_OLDEST_ON_FULL:
-                        try:
-                            _ = q.get_nowait()
-                        except asyncio.QueueEmpty:
-                            sys.stderr.write(f"{LOG_PREFIX} Broadcaster: queue empty when dropping oldest\n")
-                            pass
-                        try:
-                            q.put_nowait(item)
-                        except asyncio.QueueFull:
-                            sys.stderr.write(f"{LOG_PREFIX} Broadcaster: queue full even after dropping oldest\n")
-                            # stuck, give up
-                            pass
+                    await q.put(item)
+                except: 
+                    print("erro has happend")
+
+                # try:
+                #     await q.put(item)
+                # except asyncio.QueueFull:
+                #     if DROP_OLDEST_ON_FULL:
+                #         try:
+                #             _ = q.get_nowait()
+                #         except asyncio.QueueEmpty:
+                #             sys.stderr.write(f"{LOG_PREFIX} Broadcaster: queue empty when dropping oldest\n")
+                #             pass
+                #         try:
+                #             q.put_nowait(item)
+                #         except asyncio.QueueFull:
+                #             sys.stderr.write(f"{LOG_PREFIX} Broadcaster: queue full even after dropping oldest\n")
+                #             # stuck, give up
+                #             pass
                     # else:  # drop new item
