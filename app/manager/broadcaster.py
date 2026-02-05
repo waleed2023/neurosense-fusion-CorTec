@@ -28,7 +28,6 @@ class Broadcaster:
             self._subs.discard(q)
 
     async def publish(self, item):
-        print("locked to publish.")
         async with self._lock:
             dead = []
             for q in self._subs:
