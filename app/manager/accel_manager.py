@@ -155,6 +155,7 @@ class AccelManager:
         return AX, AY, AZ, MAG
 
     async def run(self):
+        print("Running..")
         period = 1.0 / max(1.0, float(ACCEL_ODR_HZ))
         backoff = 1.0
         max_backoff = 10.0

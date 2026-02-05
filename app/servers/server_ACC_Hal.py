@@ -31,6 +31,7 @@ class AccelGrpcServicer(sensor_pb2_grpc.AccelServicer):
     def __init__(self, broadcaster: Broadcaster, accel_manger):
         self._buffer = broadcaster
         self._accel_manager = accel_manger
+    
     # grpc method
     async def StreamAccel(
         self,
