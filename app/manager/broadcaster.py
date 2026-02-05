@@ -17,13 +17,11 @@ class Broadcaster:
 
     async def subscribe(self) -> asyncio.Queue:
         q: asyncio.Queue = asyncio.Queue(maxsize=CLIENT_QUEUE_MAX)
-        print("subscribe to queue.")
         async with self._lock:
             self._subs.add(q)
         return q
 
     async def unsubscribe(self, q: asyncio.Queue):
-        print("unsubscribe to queue.")
         async with self._lock:
             self._subs.discard(q)
 
@@ -36,10 +34,8 @@ class Broadcaster:
                 
                 #await q.put(item)
                 try:
-                    print("adding a value.")
                     await q.put(item)
                 except: 
-                    print("erro has happend.")
 
                 # try:
                 #     await q.put(item)

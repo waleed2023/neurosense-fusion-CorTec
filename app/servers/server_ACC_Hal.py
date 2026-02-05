@@ -36,7 +36,6 @@ class AccelGrpcServicer(sensor_pb2_grpc.AccelServicer):
         request: sensor_pb2.AccelSubscribeRequest,
         context: grpc.aio.ServicerContext,
     ):
-        print("Request received.")
         q = await self._buffer.subscribe()
         try:
             # Throttle as "max samples per second" (drop if too fast)
@@ -49,15 +48,12 @@ class AccelGrpcServicer(sensor_pb2_grpc.AccelServicer):
             last = 0.0
 
             while True:
-                print("Sending a sample.")
                 sample: sensor_pb2.AccelSample = await q.get() # get sample from broadcaster
-
-                if interval > 0.0:
-                    now = loop.time()
-                    if (now - last) < interval:
-                        continue  # drop to enforce max_rate_hz, in my case i set the sensor to 1660HZ
-                    last = now
-
+                # if interval > 0.0:
+                #     now = loop.time()
+                #     if (now - last) < interval:
+                #         continue  # drop to enforce max_rate_hz, in my case i set the sensor to 1660HZ
+                #     last = now
                 yield sample
 
         except asyncio.CancelledError:
