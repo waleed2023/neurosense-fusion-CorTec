@@ -17,15 +17,18 @@ class Broadcaster:
 
     async def subscribe(self) -> asyncio.Queue:
         q: asyncio.Queue = asyncio.Queue(maxsize=CLIENT_QUEUE_MAX)
+        print("subscribe to queue.")
         async with self._lock:
             self._subs.add(q)
         return q
 
     async def unsubscribe(self, q: asyncio.Queue):
+        print("unsubscribe to queue.")
         async with self._lock:
             self._subs.discard(q)
 
     async def publish(self, item):
+        print("locked to publish.")
         async with self._lock:
             dead = []
             for q in self._subs:
