@@ -124,7 +124,7 @@ class BLEManager:
                 continue
 
             try:
-                #await self.broadcaster.publish(sample)
+                await self.broadcaster.publish(sample)
                 self._marklog.mark("EMG_HAL_OUT", idx, ns_to_us(now_ns()))
             except Exception as e:
                 sys.stderr.write(f"{LOG_PREFIX} EMG publish error: {e}\n")

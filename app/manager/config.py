@@ -153,3 +153,8 @@ FIFO_MODE_CONTINUOUS = 0x06   # 0b110 continuous mode
 
 # FIFO TAG (TAG_SENSOR[4:0]) für Accelerometer “NC”
 FIFO_TAG_ACCEL_NC = 0x02
+
+
+# for clent_emu
+MEASURE_ONLY = os.getenv("MEASURE_ONLY", "0") == "1"
+DISABLE_MARKS = os.getenv("DISABLE_MARKS", "0") == "1"

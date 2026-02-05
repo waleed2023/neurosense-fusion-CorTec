@@ -4,9 +4,21 @@ import asyncio
 from typing import Optional
 
 from app.manager.broadcaster import Broadcaster
-from app.manager.config import  MAX_DELAY_MS_EMG_DUMMY, MAX_DELAY_MS_ACC_DUMMY, SENSOR_METRICS_LOG_FILE, now_ns, ns_to_us
+from app.manager.config import  DISABLE_MARKS, MAX_DELAY_MS_EMG_DUMMY, MAX_DELAY_MS_ACC_DUMMY, SENSOR_METRICS_LOG_FILE, now_ns, ns_to_us
 from app.measurment.timing_mark_logger import TimingMarkLogger
 from app.proto import sensor_pb2, fusion_dummy_pb2 as fusion_minimal_pb2
+
+
+# for client emu.
+import os
+import time
+from app.tests import DeadlineMeter
+
+MEASURE_ONLY = os.getenv("MEASURE_ONLY", "0") == "1"
+
+acc_meter = DeadlineMeter("ACC_ALGO_ONLY", target_hz=833.0, log_every_s=1.0)
+emg_meter = DeadlineMeter("EMG_ALGO_ONLY", target_hz=10.0,  log_every_s=1.0)
+
 
 class FusionManagerMinimalEvent:
     """Minimal, event-driven fusion (latest-of-each).
@@ -40,15 +52,24 @@ class FusionManagerMinimalEvent:
         self._last_emg: Optional[sensor_pb2.EmgSample] = None
         self._last_acc: Optional[sensor_pb2.AccelSample] = None
         # time stamps
-        self._marklog = TimingMarkLogger(log_file=SENSOR_METRICS_LOG_FILE)
-
+        #self._marklog = TimingMarkLogger(log_file=SENSOR_METRICS_LOG_FILE)
+        self._marklog = None if DISABLE_MARKS else TimingMarkLogger(log_file=SENSOR_METRICS_LOG_FILE)
 
 
     # for timestamping
+    # def _mark_wall(self, point: str, idx: int) -> None:
+    #     self._marklog.mark(point, idx, ns_to_us(now_ns()))
+
+    # def _mark_ts(self, point: str, idx: int, ts_us: int) -> None:
+    #     self._marklog.mark(point, idx, int(ts_us))
     def _mark_wall(self, point: str, idx: int) -> None:
+        if DISABLE_MARKS or self._marklog is None:
+            return
         self._marklog.mark(point, idx, ns_to_us(now_ns()))
 
     def _mark_ts(self, point: str, idx: int, ts_us: int) -> None:
+        if DISABLE_MARKS or self._marklog is None:
+            return
         self._marklog.mark(point, idx, int(ts_us))
 
         
@@ -152,34 +173,73 @@ class FusionManagerMinimalEvent:
                         result: sensor_pb2.EmgSample = sensor.result()
                         self._last_emg = result
                         out_ts = int(getattr(result, "ts_us", 0))
+                        # fused = self._build_fused(
+                        #     out_ts_us=out_ts,
+                        #     trigger=fusion_minimal_pb2.TRIGGER_EMG,
+                        #     emg_new=1,
+                        #     acc_new=0,
+                        # )
+                        # seq = int(fused.seq)
+                        # self._mark_wall("Fusion_Dummy_EMG_ENTER", seq)
+                        # await self._fusion_b.publish(fused)
+                        # #self._mark_ts("Fusion_Dummy_EMG_Enter", seq, int(fused.ts_us))
+                        # self._mark_wall("Fusion_Dummy_EMG_Exit", seq)
+                        t0 = time.perf_counter_ns()
                         fused = self._build_fused(
                             out_ts_us=out_ts,
                             trigger=fusion_minimal_pb2.TRIGGER_EMG,
                             emg_new=1,
                             acc_new=0,
                         )
+                        t1 = time.perf_counter_ns()
+                        emg_meter.tick(t0, t1, produced_count=1)
+
                         seq = int(fused.seq)
-                        self._mark_wall("Fusion_Dummy_EMG_ENTER", seq)
-                        await self._fusion_b.publish(fused)
-                        #self._mark_ts("Fusion_Dummy_EMG_Enter", seq, int(fused.ts_us))
-                        self._mark_wall("Fusion_Dummy_EMG_Exit", seq)
+
+                        # --- Publish nur wenn nicht MEASURE_ONLY (Tablet/BLE unabhängig messen) ---
+                        if not MEASURE_ONLY:
+                            self._mark_wall("Fusion_Dummy_EMG_ENTER", seq)
+                            await self._fusion_b.publish(fused)
+                            self._mark_wall("Fusion_Dummy_EMG_Exit", seq)
                         emg_get = asyncio.create_task(emg_q.get()) 
 
                     elif sensor is acc_get:
                         result: sensor_pb2.AccelSample = sensor.result()
                         self._last_acc = result
                         out_ts = int(getattr(result, "ts_us", 0))
+                        # fused = self._build_fused(
+                        #     out_ts_us=out_ts,
+                        #     trigger=fusion_minimal_pb2.TRIGGER_ACC,
+                        #     emg_new=0,
+                        #     acc_new=1,
+                        # )
+                        # seq = int(fused.seq)
+                        # self._mark_wall("Fusion_Dummy_ACC_ENTER", seq)
+                        # await self._fusion_b.publish(fused)
+                        # self._mark_wall("Fusion_Dummy_ACC_Exit", seq)
+                        # --- Algo-only messen (ACC) ---
+                        t0 = time.perf_counter_ns()
                         fused = self._build_fused(
                             out_ts_us=out_ts,
                             trigger=fusion_minimal_pb2.TRIGGER_ACC,
                             emg_new=0,
                             acc_new=1,
                         )
+                        t1 = time.perf_counter_ns()
+                        acc_meter.tick(t0, t1, produced_count=1)
+
                         seq = int(fused.seq)
-                        self._mark_wall("Fusion_Dummy_ACC_ENTER", seq)
-                        await self._fusion_b.publish(fused)
-                        self._mark_wall("Fusion_Dummy_ACC_Exit", seq)
-                        #self._mark_ts("Fusion_Dummy_ACC_Sensor_Time_EXIT", seq, int(fused.ts_us))
+
+                        # Optional: PRODUCED mark
+                        self._mark_wall("Fusion_Dummy_ACC_PRODUCED", seq)
+
+                        # --- Publish nur wenn nicht MEASURE_ONLY ---
+                        if not MEASURE_ONLY:
+                            self._mark_wall("Fusion_Dummy_ACC_ENTER", seq)
+                            await self._fusion_b.publish(fused)
+                            self._mark_wall("Fusion_Dummy_ACC_Exit", seq)
+
+
                         acc_get = asyncio.create_task(acc_q.get())
 
         finally:
