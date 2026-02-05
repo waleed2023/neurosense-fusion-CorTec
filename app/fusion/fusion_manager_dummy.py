@@ -192,9 +192,9 @@ class FusionManagerMinimalEvent:
 
                         seq_next = self._seq + 1
 
-                        # 1) Algo-only START (Wall-time)
-                        # 2) Algo (Dummy) ausführen
-                        self._mark_wall("Fusion_Dummy_EMG_ENTER", seq)
+                        # ENTER = Algo-Start (wall time)
+                        self._mark_wall("Fusion_Dummy_EMG_ENTER", seq_next)
+
                         fused = self._build_fused(
                             out_ts_us=out_ts,
                             trigger=fusion_minimal_pb2.TRIGGER_EMG,
@@ -202,14 +202,14 @@ class FusionManagerMinimalEvent:
                             acc_new=0,
                         )
 
-                        # 3) Algo-only END (Wall-time)
-                        t1_us = ns_to_us(now_ns())
-                        seq = int(fused.seq)
+                        # Exit = Algo-Ende (wall time)
+                        self._mark_wall("Fusion_Dummy_EMG_Exit", seq_next)
 
-                        # 4) Transport nur wenn du willst
-                        self._mark_wall("Fusion_Dummy_ACC_Exit", seq_next)
-                        #await self._fusion_b.publish(fused)
-                        #self._mark_wall("Fusion_Dummy_EMG_Exit", seq)
+                        if not MEASURE_ONLY:
+                            await self._fusion_b.publish(fused)
+
+                        # WICHTIG: Task neu erstellen
+                        emg_get = asyncio.create_task(emg_q.get())
                     # elif sensor is acc_get:
                         # result: sensor_pb2.AccelSample = sensor.result()
                         # self._last_acc = result
@@ -230,8 +230,10 @@ class FusionManagerMinimalEvent:
                         out_ts = int(getattr(result, "ts_us", 0))
 
                         seq_next = self._seq + 1
-                        self._mark_wall("Fusion_Dummy_ACC_ENTER", seq)
-                        # 2) Algo (Dummy) ausführen
+
+                        # ENTER = Algo-Start
+                        self._mark_wall("Fusion_Dummy_ACC_ENTER", seq_next)
+
                         fused = self._build_fused(
                             out_ts_us=out_ts,
                             trigger=fusion_minimal_pb2.TRIGGER_ACC,
@@ -239,12 +241,14 @@ class FusionManagerMinimalEvent:
                             acc_new=1,
                         )
 
-                        # 3) Algo-only END (Wall-time)
-                        seq = int(fused.seq)
-                        # 4) Transport nur wenn du willst
-                        self._mark_wall("Fusion_Dummy_ACC_Exit", seq)
+                        # Exit = Algo-Ende
+                        self._mark_wall("Fusion_Dummy_ACC_Exit", seq_next)
+
+                        if not MEASURE_ONLY:
+                            await self._fusion_b.publish(fused)
 
                         acc_get = asyncio.create_task(acc_q.get())
+
 
         finally:
             for task in (emg_get, acc_get):
