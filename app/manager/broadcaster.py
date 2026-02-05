@@ -35,7 +35,8 @@ class Broadcaster:
                 #await q.put(item)
                 try:
                     await q.put(item)
-                except: 
+                except:
+                    pass
 
                 # try:
                 #     await q.put(item)
