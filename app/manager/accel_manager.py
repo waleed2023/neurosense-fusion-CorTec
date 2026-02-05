@@ -193,7 +193,7 @@ class AccelManager:
                             ts_us=ts_us,
                         )
 
-                        
+                        print(AX, AY, AZ, MAG, "im hier")
                         await self.broadcaster.publish(sample)
                         #self._marklog.mark("ACC_HAL_OUT", idx, ns_to_us(now_ns()))
                         
