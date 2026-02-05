@@ -193,10 +193,8 @@ class FusionManagerMinimalEvent:
                         seq_next = self._seq + 1
 
                         # 1) Algo-only START (Wall-time)
-                        t0_us = ns_to_us(now_ns())
-                        self._mark_ts("Fusion_Dummy_EMG_ALGO_START", seq_next, t0_us)
-
                         # 2) Algo (Dummy) ausführen
+                        self._mark_wall("Fusion_Dummy_EMG_ENTER", seq)
                         fused = self._build_fused(
                             out_ts_us=out_ts,
                             trigger=fusion_minimal_pb2.TRIGGER_EMG,
@@ -207,16 +205,11 @@ class FusionManagerMinimalEvent:
                         # 3) Algo-only END (Wall-time)
                         t1_us = ns_to_us(now_ns())
                         seq = int(fused.seq)
-                        self._mark_ts("Fusion_Dummy_EMG_ALGO_END", seq, t1_us)
-
-                        # optional: Sensor-Zeitstempel loggen
-                        self._mark_ts("Fusion_Dummy_EMG_TRIGGER_TS", seq, out_ts)
 
                         # 4) Transport nur wenn du willst
-                        if not MEASURE_ONLY:
-                            self._mark_wall("Fusion_Dummy_EMG_ENTER", seq)
-                            await self._fusion_b.publish(fused)
-                            self._mark_wall("Fusion_Dummy_EMG_Exit", seq)
+                        self._mark_wall("Fusion_Dummy_ACC_Exit", seq_next)
+                        #await self._fusion_b.publish(fused)
+                        #self._mark_wall("Fusion_Dummy_EMG_Exit", seq)
                     # elif sensor is acc_get:
                         # result: sensor_pb2.AccelSample = sensor.result()
                         # self._last_acc = result
@@ -237,11 +230,7 @@ class FusionManagerMinimalEvent:
                         out_ts = int(getattr(result, "ts_us", 0))
 
                         seq_next = self._seq + 1
-
-                        # 1) Algo-only START (Wall-time)
-                        t0_us = ns_to_us(now_ns())
-                        self._mark_ts("Fusion_Dummy_ACC_ALGO_START", seq_next, t0_us)
-
+                        self._mark_wall("Fusion_Dummy_ACC_ENTER", seq)
                         # 2) Algo (Dummy) ausführen
                         fused = self._build_fused(
                             out_ts_us=out_ts,
@@ -251,18 +240,9 @@ class FusionManagerMinimalEvent:
                         )
 
                         # 3) Algo-only END (Wall-time)
-                        t1_us = ns_to_us(now_ns())
                         seq = int(fused.seq)
-                        self._mark_ts("Fusion_Dummy_ACC_ALGO_END", seq, t1_us)
-
-                        # optional: Sensor-Zeitstempel loggen
-                        self._mark_ts("Fusion_Dummy_ACC_TRIGGER_TS", seq, out_ts)
-
                         # 4) Transport nur wenn du willst
-                        if not MEASURE_ONLY:
-                            self._mark_wall("Fusion_Dummy_ACC_ENTER", seq)
-                            await self._fusion_b.publish(fused)
-                            self._mark_wall("Fusion_Dummy_ACC_Exit", seq)
+                        self._mark_wall("Fusion_Dummy_ACC_Exit", seq)
 
                         acc_get = asyncio.create_task(acc_q.get())
 
