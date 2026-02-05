@@ -28,6 +28,7 @@ class Broadcaster:
     async def publish(self, item):
         async with self._lock:
             if len(self._subs) == 0:
+                print("Buffer is empty.")
                 await asyncio.sleep(1)
             dead = []
             for q in self._subs:
