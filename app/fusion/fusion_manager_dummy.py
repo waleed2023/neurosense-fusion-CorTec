@@ -12,7 +12,7 @@ from app.proto import sensor_pb2, fusion_dummy_pb2 as fusion_minimal_pb2
 # for client emu.
 import os
 import time
-from app.tests import DeadlineMeter
+from app.tests.client_emu import DeadlineMeter
 
 MEASURE_ONLY = os.getenv("MEASURE_ONLY", "0") == "1"
 
