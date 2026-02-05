@@ -36,6 +36,7 @@ class AccelGrpcServicer(sensor_pb2_grpc.AccelServicer):
         request: sensor_pb2.AccelSubscribeRequest,
         context: grpc.aio.ServicerContext,
     ):
+        print("Request received.")
         q = await self._buffer.subscribe()
         try:
             # Throttle as "max samples per second" (drop if too fast)
