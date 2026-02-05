@@ -169,10 +169,10 @@ class FusionManagerMinimalEvent:
 
                 # publish once per completed task ("event-driven").
                 for sensor in done:
-                    if sensor is emg_get:
-                        result: sensor_pb2.EmgSample = sensor.result()
-                        self._last_emg = result
-                        out_ts = int(getattr(result, "ts_us", 0))
+                    # if sensor is emg_get:
+                    #     result: sensor_pb2.EmgSample = sensor.result()
+                    #     self._last_emg = result
+                    #     out_ts = int(getattr(result, "ts_us", 0))
                         # fused = self._build_fused(
                         #     out_ts_us=out_ts,
                         #     trigger=fusion_minimal_pb2.TRIGGER_EMG,
@@ -184,29 +184,43 @@ class FusionManagerMinimalEvent:
                         # await self._fusion_b.publish(fused)
                         # #self._mark_ts("Fusion_Dummy_EMG_Enter", seq, int(fused.ts_us))
                         # self._mark_wall("Fusion_Dummy_EMG_Exit", seq)
-                        t0 = time.perf_counter_ns()
+
+                    if sensor is emg_get:
+                        result: sensor_pb2.EmgSample = sensor.result()
+                        self._last_emg = result
+                        out_ts = int(getattr(result, "ts_us", 0))
+
+                        seq_next = self._seq + 1
+
+                        # 1) Algo-only START (Wall-time)
+                        t0_us = ns_to_us(now_ns())
+                        self._mark_ts("Fusion_Dummy_EMG_ALGO_START", seq_next, t0_us)
+
+                        # 2) Algo (Dummy) ausführen
                         fused = self._build_fused(
                             out_ts_us=out_ts,
                             trigger=fusion_minimal_pb2.TRIGGER_EMG,
                             emg_new=1,
                             acc_new=0,
                         )
-                        t1 = time.perf_counter_ns()
-                        emg_meter.tick(t0, t1, produced_count=1)
 
+                        # 3) Algo-only END (Wall-time)
+                        t1_us = ns_to_us(now_ns())
                         seq = int(fused.seq)
+                        self._mark_ts("Fusion_Dummy_EMG_ALGO_END", seq, t1_us)
 
-                        # --- Publish nur wenn nicht MEASURE_ONLY (Tablet/BLE unabhängig messen) ---
+                        # optional: Sensor-Zeitstempel loggen
+                        self._mark_ts("Fusion_Dummy_EMG_TRIGGER_TS", seq, out_ts)
+
+                        # 4) Transport nur wenn du willst
                         if not MEASURE_ONLY:
                             self._mark_wall("Fusion_Dummy_EMG_ENTER", seq)
                             await self._fusion_b.publish(fused)
                             self._mark_wall("Fusion_Dummy_EMG_Exit", seq)
-                        emg_get = asyncio.create_task(emg_q.get()) 
-
-                    elif sensor is acc_get:
-                        result: sensor_pb2.AccelSample = sensor.result()
-                        self._last_acc = result
-                        out_ts = int(getattr(result, "ts_us", 0))
+                    # elif sensor is acc_get:
+                        # result: sensor_pb2.AccelSample = sensor.result()
+                        # self._last_acc = result
+                        # out_ts = int(getattr(result, "ts_us", 0))
                         # fused = self._build_fused(
                         #     out_ts_us=out_ts,
                         #     trigger=fusion_minimal_pb2.TRIGGER_ACC,
@@ -217,28 +231,38 @@ class FusionManagerMinimalEvent:
                         # self._mark_wall("Fusion_Dummy_ACC_ENTER", seq)
                         # await self._fusion_b.publish(fused)
                         # self._mark_wall("Fusion_Dummy_ACC_Exit", seq)
-                        # --- Algo-only messen (ACC) ---
-                        t0 = time.perf_counter_ns()
+                    elif sensor is acc_get:
+                        result: sensor_pb2.AccelSample = sensor.result()
+                        self._last_acc = result
+                        out_ts = int(getattr(result, "ts_us", 0))
+
+                        seq_next = self._seq + 1
+
+                        # 1) Algo-only START (Wall-time)
+                        t0_us = ns_to_us(now_ns())
+                        self._mark_ts("Fusion_Dummy_ACC_ALGO_START", seq_next, t0_us)
+
+                        # 2) Algo (Dummy) ausführen
                         fused = self._build_fused(
                             out_ts_us=out_ts,
                             trigger=fusion_minimal_pb2.TRIGGER_ACC,
                             emg_new=0,
                             acc_new=1,
                         )
-                        t1 = time.perf_counter_ns()
-                        acc_meter.tick(t0, t1, produced_count=1)
 
+                        # 3) Algo-only END (Wall-time)
+                        t1_us = ns_to_us(now_ns())
                         seq = int(fused.seq)
+                        self._mark_ts("Fusion_Dummy_ACC_ALGO_END", seq, t1_us)
 
-                        # Optional: PRODUCED mark
-                        self._mark_wall("Fusion_Dummy_ACC_PRODUCED", seq)
+                        # optional: Sensor-Zeitstempel loggen
+                        self._mark_ts("Fusion_Dummy_ACC_TRIGGER_TS", seq, out_ts)
 
-                        # --- Publish nur wenn nicht MEASURE_ONLY ---
+                        # 4) Transport nur wenn du willst
                         if not MEASURE_ONLY:
                             self._mark_wall("Fusion_Dummy_ACC_ENTER", seq)
                             await self._fusion_b.publish(fused)
                             self._mark_wall("Fusion_Dummy_ACC_Exit", seq)
-
 
                         acc_get = asyncio.create_task(acc_q.get())
 
