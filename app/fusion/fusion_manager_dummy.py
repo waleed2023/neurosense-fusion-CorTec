@@ -205,8 +205,8 @@ class FusionManagerMinimalEvent:
                         # Exit = Algo-Ende (wall time)
                         self._mark_wall("Fusion_Dummy_EMG_Exit", seq_next)
 
-                        if not MEASURE_ONLY:
-                            await self._fusion_b.publish(fused)
+                        #if not MEASURE_ONLY:
+                            #await self._fusion_b.publish(fused)
 
                         # WICHTIG: Task neu erstellen
                         emg_get = asyncio.create_task(emg_q.get())
@@ -244,8 +244,8 @@ class FusionManagerMinimalEvent:
                         # Exit = Algo-Ende
                         self._mark_wall("Fusion_Dummy_ACC_Exit", seq_next)
 
-                        if not MEASURE_ONLY:
-                            await self._fusion_b.publish(fused)
+                        #if not MEASURE_ONLY:
+                            #await self._fusion_b.publish(fused)
 
                         acc_get = asyncio.create_task(acc_q.get())
 
