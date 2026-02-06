@@ -11,7 +11,6 @@ class Broadcaster:
     When the queue is full, either the oldest entry is dropped (according to policy) or the new sample is discarded.
     """
     def __init__(self):
-        print("A new broadcaster was created.")
         self._subs: Set[asyncio.Queue] = set()
         self._lock = asyncio.Lock()
 
@@ -27,31 +26,21 @@ class Broadcaster:
 
     async def publish(self, item):
         async with self._lock:
-            if len(self._subs) == 0:
-                print("Buffer is empty.")
-                await asyncio.sleep(1)
             dead = []
             for q in self._subs:
-                
-                #await q.put(item)
                 try:
-                    await q.put(item)
-                except:
-                    pass
-
-                # try:
-                #     await q.put(item)
-                # except asyncio.QueueFull:
-                #     if DROP_OLDEST_ON_FULL:
-                #         try:
-                #             _ = q.get_nowait()
-                #         except asyncio.QueueEmpty:
-                #             sys.stderr.write(f"{LOG_PREFIX} Broadcaster: queue empty when dropping oldest\n")
-                #             pass
-                #         try:
-                #             q.put_nowait(item)
-                #         except asyncio.QueueFull:
-                #             sys.stderr.write(f"{LOG_PREFIX} Broadcaster: queue full even after dropping oldest\n")
-                #             # stuck, give up
-                #             pass
+                    q.put_nowait(item)
+                except asyncio.QueueFull:
+                    if DROP_OLDEST_ON_FULL:
+                        try:
+                            _ = q.get_nowait()
+                        except asyncio.QueueEmpty:
+                            sys.stderr.write(f"{LOG_PREFIX} Broadcaster: queue empty when dropping oldest\n")
+                            pass
+                        try:
+                            q.put_nowait(item)
+                        except asyncio.QueueFull:
+                            sys.stderr.write(f"{LOG_PREFIX} Broadcaster: queue full even after dropping oldest\n")
+                            # stuck, give up
+                            pass
                     # else:  # drop new item

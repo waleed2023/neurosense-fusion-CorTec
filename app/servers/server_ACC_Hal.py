@@ -30,18 +30,13 @@ class AccelGrpcServicer(sensor_pb2_grpc.AccelServicer):
 
     def __init__(self, broadcaster: Broadcaster):
         self._buffer = broadcaster
-    
     # grpc method
     async def StreamAccel(
         self,
         request: sensor_pb2.AccelSubscribeRequest,
         context: grpc.aio.ServicerContext,
     ):
-        print("buffer subscribe")
         q = await self._buffer.subscribe()
-        print("starting accel")
-        
-        print("start sending data.")
         try:
             # Throttle as "max samples per second" (drop if too fast)
             # max_rate_hz from client request in case the client(my case flutter/dart app) wants to limit rate, otherwise use MAX_RATE_HZ_ACC
@@ -54,17 +49,18 @@ class AccelGrpcServicer(sensor_pb2_grpc.AccelServicer):
 
             while True:
                 sample: sensor_pb2.AccelSample = await q.get() # get sample from broadcaster
-                # if interval > 0.0:
-                #     now = loop.time()
-                #     if (now - last) < interval:
-                #         continue  # drop to enforce max_rate_hz, in my case i set the sensor to 1660HZ
-                #     last = now
+
+                if interval > 0.0:
+                    now = loop.time()
+                    if (now - last) < interval:
+                        continue  # drop to enforce max_rate_hz, in my case i set the sensor to 1660HZ
+                    last = now
+
                 yield sample
 
         except asyncio.CancelledError:
             raise
         finally:
-            
             await self._buffer.unsubscribe(q)
 
 # Set up and start the gRPC server
@@ -87,9 +83,8 @@ async def main_async():
     grpc_host = os.getenv("GRPC_HOST", GRPC_HOST)
 
     grpc_server = await _bulild_grpc(acc_b, host=grpc_host, port=grpc_port)
-    acc_task = await asyncio.create_task(acc_mgr.run(), name="accel-manager")
 
-    
+    acc_task = asyncio.create_task(acc_mgr.run(), name="accel-manager")
 
     stop = asyncio.Event()
 
@@ -107,14 +102,12 @@ async def main_async():
     await stop.wait()
 
     sys.stdout.write(f"{LOG_PREFIX} Stop signal, shutting down ACC HAL...\n")
-    
     await acc_mgr.stop()
     acc_task.cancel()
     try:
         await acc_task
     except asyncio.CancelledError:
         pass
-    
 
     await grpc_server.stop(grace=2.0) # Graceful shutdown
 

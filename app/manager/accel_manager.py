@@ -155,8 +155,6 @@ class AccelManager:
         return AX, AY, AZ, MAG
 
     async def run(self):
-        print("Running..")
-        await asyncio.sleep(10)
         period = 1.0 / max(1.0, float(ACCEL_ODR_HZ))
         backoff = 1.0
         max_backoff = 10.0
@@ -195,16 +193,15 @@ class AccelManager:
                             ts_us=ts_us,
                         )
 
-                        #print(AX, AY, AZ, MAG, "im hier")
+
                         await self.broadcaster.publish(sample)
-                        #self._marklog.mark("ACC_HAL_OUT", idx, ns_to_us(now_ns()))
-                        
-                        # next_call += period
-                        # sleep_t = next_call - time.perf_counter()
-                        # if sleep_t > 0:
-                        #     await asyncio.sleep(sleep_t)
-                        # else:
-                        #     next_call = time.perf_counter()
+                        self._marklog.mark("ACC_HAL_OUT", idx, ns_to_us(now_ns()))
+                        next_call += period
+                        sleep_t = next_call - time.perf_counter()
+                        if sleep_t > 0:
+                            await asyncio.sleep(sleep_t)
+                        else:
+                            next_call = time.perf_counter
                         
                         # now = time.perf_counter()
                         # if last == 0.0:

@@ -97,7 +97,6 @@ async def _grpc_pull_acc(*, stop_evt: asyncio.Event, broadcaster: Broadcaster, h
             channel = grpc.aio.insecure_channel(target)
             stub = sensor_pb2_grpc.AccelStub(channel)
 
-            print("requesting Accel data.")
             async for sample in stub.StreamAccel(req):
                 await broadcaster.publish(sample)
                 if stop_evt.is_set():
