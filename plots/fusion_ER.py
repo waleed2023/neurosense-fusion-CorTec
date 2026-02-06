@@ -1,10 +1,13 @@
 import sys
+import argparse
 import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
 
-EMG_ENTRY = "Fusion_Dummy_ACC_Exit"
 DEFAULT_COLS = ["kind", "name", "idx", "ts_us", "dt_us", "abs_dev_us", "delay_us"]
+
+DEFAULT_ACC_MARK = "Fusion_Dummy_ACC_Exit"
+DEFAULT_EMG_MARK = "Fusion_Dummy_EMG_Exit"
 
 def load_csv(path: str) -> pd.DataFrame:
     df = pd.read_csv(path)
@@ -20,21 +23,39 @@ def load_csv(path: str) -> pd.DataFrame:
     df["ts_us"] = df["ts_us"].astype(np.int64)
     return df
 
-def sliding_rate_plot(ts_us: np.ndarray, win_s: float = 1.0, ref_hz: float = 10.0):
+def compute_overall_rate(ts_us: np.ndarray) -> float:
     ts = np.sort(ts_us.astype(np.int64))
     if len(ts) < 2:
-        print("Zu wenig Daten (weniger als 2 Timestamps).")
-        return
+        return float("nan")
+    duration_s = (ts[-1] - ts[0]) / 1e6
+    if duration_s <= 0:
+        return float("nan")
+    # (n-1) intervals over duration
+    return float((len(ts) - 1) / duration_s)
 
-    # Zeit relativ zum Start (Sekunden)
-    t = (ts - ts[0]) / 1e6
+def dt_stats_us(ts_us: np.ndarray) -> dict:
+    ts = np.sort(ts_us.astype(np.int64))
+    if len(ts) < 2:
+        return {"median_dt_us": np.nan, "mean_dt_us": np.nan, "min_dt_us": np.nan, "max_dt_us": np.nan}
+    d = np.diff(ts)
+    return {
+        "median_dt_us": float(np.median(d)),
+        "mean_dt_us": float(np.mean(d)),
+        "min_dt_us": float(np.min(d)),
+        "max_dt_us": float(np.max(d)),
+    }
+
+def sliding_rate(ts_us: np.ndarray, win_s: float) -> tuple[np.ndarray, np.ndarray, float]:
+    ts = np.sort(ts_us.astype(np.int64))
+    if len(ts) < 2:
+        return np.array([]), np.array([]), float("nan")
+
+    t = (ts - ts[0]) / 1e6  # seconds
     t_end = float(t[-1])
 
-    # Nur volle Fenster plotten (verhindert Drop im letzten unvollständigen Window)
     t_end_full = np.floor(t_end / win_s) * win_s
     if t_end_full <= 0:
-        print("Zu kurze Messdauer für Sliding-Window-Plot.")
-        return
+        return np.array([]), np.array([]), float("nan")
 
     edges = np.arange(0.0, t_end_full + win_s, win_s)
     counts, _ = np.histogram(t, bins=edges)
@@ -42,22 +63,27 @@ def sliding_rate_plot(ts_us: np.ndarray, win_s: float = 1.0, ref_hz: float = 10.
     rate = counts / win_s
     centers = edges[:-1] + win_s / 2
     avg_rate = float(np.mean(rate)) if len(rate) else float("nan")
+    return centers, rate, avg_rate
 
-    # ---- Plot (thesis style) ----
-    fig, ax = plt.subplots(figsize=(10, 3))  # neutrales Seitenverhältnis
-    ax.plot(centers, rate, linewidth=1.0, label=f"rate ({win_s:.1f}s window)")
+def plot_rate(ts_us: np.ndarray, title: str, win_s: float, ref_hz: float, save_path: str | None = None):
+    centers, rate, avg_rate = sliding_rate(ts_us, win_s=win_s)
 
-    # Referenz + Mittelwert
-    ax.axhline(ref_hz, linestyle="--", linewidth=1.0, label=f"ref {ref_hz:.0f} Hz")
-    ax.axhline(avg_rate, linestyle=":", linewidth=1.0, label=f"mean {avg_rate:.1f} Hz")
+    if len(rate) == 0:
+        print(f"[{title}] Zu wenig Daten für Sliding-Window-Plot.")
+        return
+
+    fig, ax = plt.subplots(figsize=(10, 3))
+    ax.plot(centers, rate, linewidth=1.0)
+
+    ax.axhline(ref_hz, linestyle="--", linewidth=1.0)
+    ax.axhline(avg_rate, linestyle=":", linewidth=1.0)
 
     ax.set_xlabel("Time [s]")
     ax.set_ylabel("Rate [Hz]")
-    ax.set_title("Effective rate (EMG)")
-    ax.set_xlim(0, t_end_full)
+    ax.set_title(title)
+    ax.set_xlim(0, float(centers[-1] + win_s / 2))
 
-    # Kleine, neutrale Info-Box (oben rechts)
-    txt = f"ref: {ref_hz:.0f} Hz\nmean: {avg_rate:.1f} Hz"
+    txt = f"ref: {ref_hz:.0f} Hz\nmean(win): {avg_rate:.1f} Hz"
     ax.text(
         0.98, 0.98, txt,
         transform=ax.transAxes,
@@ -71,25 +97,58 @@ def sliding_rate_plot(ts_us: np.ndarray, win_s: float = 1.0, ref_hz: float = 10.
         )
     )
 
-    # Optional: Legende weglassen (Box reicht). Wenn du willst, aktivieren:
-    # ax.legend(loc="lower right", fontsize=8, frameon=False)
-
     plt.tight_layout()
+    if save_path:
+        plt.savefig(save_path, dpi=300)
     plt.show()
 
+def extract_ts(df: pd.DataFrame, mark: str) -> np.ndarray:
+    ts = df.loc[df["name"] == mark, "ts_us"].to_numpy(np.int64)
+    return ts
+
+def print_summary(label: str, ts_us: np.ndarray):
+    n = len(ts_us)
+    overall = compute_overall_rate(ts_us)
+    stats = dt_stats_us(ts_us)
+    print(f"\n=== {label} ===")
+    print(f"samples: {n}")
+    print(f"overall rate (from ts): {overall:.2f} Hz")
+    print(f"dt_us median/mean: {stats['median_dt_us']:.1f} / {stats['mean_dt_us']:.1f}")
+    print(f"dt_us min/max: {stats['min_dt_us']:.1f} / {stats['max_dt_us']:.1f}")
+
 def main():
-    if len(sys.argv) < 2:
-        print("Usage: python plot_rate.py <timing_metrics.csv>")
-        sys.exit(1)
+    ap = argparse.ArgumentParser()
+    ap.add_argument("csv", help="timing_metrics.csv (fusion dummy)")
+    ap.add_argument("--win", type=float, default=1.0, help="window size in seconds (default 1.0)")
+    ap.add_argument("--acc_mark", default=DEFAULT_ACC_MARK)
+    ap.add_argument("--emg_mark", default=DEFAULT_EMG_MARK)
+    ap.add_argument("--acc_ref", type=float, default=700.0, help="ACC reference Hz (default 700)")
+    ap.add_argument("--emg_ref", type=float, default=10.0, help="EMG reference Hz (default 10)")
+    ap.add_argument("--save", action="store_true", help="save plots as PNG next to CSV")
+    args = ap.parse_args()
 
-    df = load_csv(sys.argv[1])
-    ts = df.loc[df["name"] == EMG_ENTRY, "ts_us"].to_numpy(np.int64)
+    df = load_csv(args.csv)
 
-    if len(ts) == 0:
-        print(f"Keine Daten für mark '{EMG_ENTRY}' gefunden.")
-        sys.exit(1)
+    acc_ts = extract_ts(df, args.acc_mark)
+    emg_ts = extract_ts(df, args.emg_mark)
 
-    sliding_rate_plot(ts, win_s=1.0, ref_hz=10)
+    if len(acc_ts) == 0:
+        print(f"Keine Daten für ACC mark '{args.acc_mark}' gefunden.")
+    else:
+        print_summary("ACC (Dummy Output)", acc_ts)
+        save_path = None
+        if args.save:
+            save_path = args.csv.replace(".csv", "_acc_rate.png")
+        plot_rate(acc_ts, title="Effective rate (ACC dummy output)", win_s=args.win, ref_hz=args.acc_ref, save_path=save_path)
+
+    if len(emg_ts) == 0:
+        print(f"Keine Daten für EMG mark '{args.emg_mark}' gefunden.")
+    else:
+        print_summary("EMG (Dummy Output)", emg_ts)
+        save_path = None
+        if args.save:
+            save_path = args.csv.replace(".csv", "_emg_rate.png")
+        plot_rate(emg_ts, title="Effective rate (EMG dummy output)", win_s=args.win, ref_hz=args.emg_ref, save_path=save_path)
 
 if __name__ == "__main__":
     main()

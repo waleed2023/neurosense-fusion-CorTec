@@ -87,6 +87,10 @@ class FusionManagerMinimalEvent:
             pass
         self._task = None
 
+        if self._marklog is not None:
+            self._marklog.close()
+
+
     def _fresh(self, *, ref_ts_us: int, sample_ts_us: int, is_emg:bool) -> bool:
         #print( f"ref_ts_us: {ref_ts_us}, sample_ts_us: {sample_ts_us}, is_emg: {is_emg}" )  
         if sample_ts_us <= 0 or ref_ts_us <= 0:
@@ -161,95 +165,77 @@ class FusionManagerMinimalEvent:
 
         try:
             while True:
-                # Wait for either an EMG or ACC sample.
-                done, _pending = await asyncio.wait(
+                done, _ = await asyncio.wait(
                     {emg_get, acc_get},
                     return_when=asyncio.FIRST_COMPLETED,
                 )
 
-                # publish once per completed task ("event-driven").
-                for sensor in done:
-                    # if sensor is emg_get:
-                    #     result: sensor_pb2.EmgSample = sensor.result()
-                    #     self._last_emg = result
-                    #     out_ts = int(getattr(result, "ts_us", 0))
-                        # fused = self._build_fused(
-                        #     out_ts_us=out_ts,
-                        #     trigger=fusion_minimal_pb2.TRIGGER_EMG,
-                        #     emg_new=1,
-                        #     acc_new=0,
-                        # )
-                        # seq = int(fused.seq)
-                        # self._mark_wall("Fusion_Dummy_EMG_ENTER", seq)
-                        # await self._fusion_b.publish(fused)
-                        # #self._mark_ts("Fusion_Dummy_EMG_Enter", seq, int(fused.ts_us))
-                        # self._mark_wall("Fusion_Dummy_EMG_Exit", seq)
-
-                    if sensor is emg_get:
-                        result: sensor_pb2.EmgSample = sensor.result()
+                for task in done:
+                    # EMG event
+                    if task is emg_get:
+                        result: sensor_pb2.EmgSample = task.result()
                         self._last_emg = result
                         out_ts = int(getattr(result, "ts_us", 0))
 
                         seq_next = self._seq + 1
 
-                        # ENTER = Algo-Start (wall time)
-                        # EMG
                         self._mark_wall("Fusion_Dummy_EMG_ENTER", seq_next)
-
-                        # Trigger-Timestamp (vom Eingang) extra loggen:
                         self._mark_ts("Fusion_Dummy_EMG_TRIGGER_TS", seq_next, out_ts)
 
+                        t0 = time.perf_counter_ns()
                         fused = self._build_fused(
                             out_ts_us=out_ts,
                             trigger=fusion_minimal_pb2.TRIGGER_EMG,
                             emg_new=1,
                             acc_new=0,
                         )
+                        t1 = time.perf_counter_ns()
+
+                        # Algo-only Meter (optional, kann bleiben)
+                        emg_meter.tick(t0, t1, produced_count=1)
+
+                        # Wenn du nur CSV willst: kann aus bleiben
+                        if not MEASURE_ONLY:
+                            await self._fusion_b.publish(fused)
 
                         self._mark_wall("Fusion_Dummy_EMG_Exit", seq_next)
 
+                        # !!! Wichtig: neu armen
+                        emg_get = asyncio.create_task(emg_q.get())
 
-                    # elif sensor is acc_get:
-                        # result: sensor_pb2.AccelSample = sensor.result()
-                        # self._last_acc = result
-                        # out_ts = int(getattr(result, "ts_us", 0))
-                        # fused = self._build_fused(
-                        #     out_ts_us=out_ts,
-                        #     trigger=fusion_minimal_pb2.TRIGGER_ACC,
-                        #     emg_new=0,
-                        #     acc_new=1,
-                        # )
-                        # seq = int(fused.seq)
-                        # self._mark_wall("Fusion_Dummy_ACC_ENTER", seq)
-                        # await self._fusion_b.publish(fused)
-                        # self._mark_wall("Fusion_Dummy_ACC_Exit", seq)
-                    elif sensor is acc_get:
-                        result: sensor_pb2.AccelSample = sensor.result()
+                    # ACC event
+                    elif task is acc_get:
+                        result: sensor_pb2.AccelSample = task.result()
                         self._last_acc = result
                         out_ts = int(getattr(result, "ts_us", 0))
 
                         seq_next = self._seq + 1
 
-                        # ACC
                         self._mark_wall("Fusion_Dummy_ACC_ENTER", seq_next)
-
                         self._mark_ts("Fusion_Dummy_ACC_TRIGGER_TS", seq_next, out_ts)
 
+                        t0 = time.perf_counter_ns()
                         fused = self._build_fused(
                             out_ts_us=out_ts,
                             trigger=fusion_minimal_pb2.TRIGGER_ACC,
                             emg_new=0,
                             acc_new=1,
                         )
+                        t1 = time.perf_counter_ns()
+
+                        acc_meter.tick(t0, t1, produced_count=1)
+
+                        if not MEASURE_ONLY:
+                            await self._fusion_b.publish(fused)
 
                         self._mark_wall("Fusion_Dummy_ACC_Exit", seq_next)
 
-
-
+                        # !!! Wichtig: neu armen
+                        acc_get = asyncio.create_task(acc_q.get())
 
         finally:
-            for task in (emg_get, acc_get):
-                if task and not task.done():
-                    task.cancel()
+            for t in (emg_get, acc_get):
+                if t and not t.done():
+                    t.cancel()
             await self._emg_b.unsubscribe(emg_q)
             await self._acc_b.unsubscribe(acc_q)
