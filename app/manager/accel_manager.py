@@ -224,7 +224,7 @@ class AccelManager:
                         # await asyncio.sleep(sleep_t)
                         # last = time.perf_counter()
 
-                self._bus = None
+                #self._bus = None
 
             except asyncio.CancelledError:
                 sys.stdout.write(f"{LOG_PREFIX} Accel-Streaming stopped\n")
