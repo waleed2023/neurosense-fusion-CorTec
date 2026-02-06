@@ -153,9 +153,20 @@ class AccelManager:
         AZ = az * sf
         MAG = math.sqrt(AX * AX + AY * AY + AZ * AZ)
         return AX, AY, AZ, MAG
+    
+    async def _broadcaster_worker(self):
+            """Dieser Task läuft im Hintergrund und sendet die Daten."""
+            while not self._stop.is_set():
+                try:
+                    sample = await self.queue.get()
+                    await self.broadcaster.publish(sample)
+                    self.queue.task_done()
+                except Exception as e:
+                    sys.stderr.write(f"{LOG_PREFIX} Broadcast-Error: {e}\n")
 
     async def run(self):
         period = 1.0 / max(1.0, float(ACCEL_ODR_HZ))
+        worker_task = asyncio.create_task(self._broadcaster_worker())
         backoff = 1.0
         max_backoff = 10.0
 
@@ -192,19 +203,18 @@ class AccelManager:
                             mag=MAG,
                             ts_us=ts_us,
                         )
-
-
-                        await self.broadcaster.publish(sample)
-                        self._marklog.mark("ACC_HAL_OUT", idx, ns_to_us(now_ns()))
+                        try:
+                            self.queu.put_nowait(sample)
+                        except asyncio.QueueFull:
+                            pass
                         next_call += period
                         now = time.perf_counter()
                         sleep_t = next_call - now
-                        if sleep_t > 0.001:  # Nur schlafen, wenn mehr als 1ms Zeit ist
+
+                        if sleep_t > 0.0005: # Nur schlafen, wenn > 0.5ms Zeit ist
                             await asyncio.sleep(sleep_t)
-                        elif sleep_t <= 0 and sleep_t > -period:
-                            # Wir sind knapp dran, sofort weitermachen ohne Context-Switch
-                            pass
-                        else:
+                        elif sleep_t < -period:
+                            # Wir sind mehr als eine Periode im Verzug -> Zeitgeber resetten
                             next_call = now
                         # now = time.perf_counter()
                         # if last == 0.0:
