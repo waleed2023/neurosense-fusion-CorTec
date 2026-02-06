@@ -3,7 +3,7 @@ import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
 
-EMG_ENTRY = "EMG_HAL_ENTRY"
+EMG_ENTRY = "Fusion_Dummy_EMG_TRIGGER_TS"
 DEFAULT_COLS = ["kind", "name", "idx", "ts_us", "dt_us", "abs_dev_us", "delay_us"]
 
 def load_csv(path: str) -> pd.DataFrame:
