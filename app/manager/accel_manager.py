@@ -197,11 +197,14 @@ class AccelManager:
                         await self.broadcaster.publish(sample)
                         self._marklog.mark("ACC_HAL_OUT", idx, ns_to_us(now_ns()))
                         next_call += period
-                        sleep_t = next_call - time.perf_counter()
-                        if sleep_t > 0:
+                        now = time.perf_counter()
+                        sleep_t = next_call - now
+
+                        if sleep_t > 0.0005: # Nur schlafen, wenn > 0.5ms Zeit ist
                             await asyncio.sleep(sleep_t)
-                        else:
-                            next_call = time.perf_counter()
+                        elif sleep_t < -period:
+                            # Wir sind mehr als eine Periode im Verzug -> Zeitgeber resetten
+                            next_call = now
                         
                         # now = time.perf_counter()
                         # if last == 0.0:
