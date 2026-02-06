@@ -67,12 +67,15 @@ class AccelGrpcServicer(sensor_pb2_grpc.AccelServicer):
 async def _bulild_grpc(broadcaster: Broadcaster, *, host: str, port: int) -> grpc.aio.Server:
     server = grpc.aio.server()
     sensor_pb2_grpc.add_AccelServicer_to_server(AccelGrpcServicer(broadcaster), server)
+
     bind = f"{host}:{port}"
-    server.add_insecure_port(bind)
+    bound_port = server.add_insecure_port(bind)
+    if bound_port == 0:
+        raise RuntimeError(f"ACC gRPC could not bind to {bind} (port in use?)")
+
     await server.start()
     sys.stdout.write(f"{LOG_PREFIX} ACC gRPC listening on {bind}\n")
     return server
-
 
 async def main_async():
     acc_b = Broadcaster()
