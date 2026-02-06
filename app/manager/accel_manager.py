@@ -199,13 +199,13 @@ class AccelManager:
                         next_call += period
                         now = time.perf_counter()
                         sleep_t = next_call - now
-
-                        if sleep_t > 0.0005: # Nur schlafen, wenn > 0.5ms Zeit ist
+                        if sleep_t > 0.001:  # Nur schlafen, wenn mehr als 1ms Zeit ist
                             await asyncio.sleep(sleep_t)
-                        elif sleep_t < -period:
-                            # Wir sind mehr als eine Periode im Verzug -> Zeitgeber resetten
+                        elif sleep_t <= 0 and sleep_t > -period:
+                            # Wir sind knapp dran, sofort weitermachen ohne Context-Switch
+                            pass
+                        else:
                             next_call = now
-                        
                         # now = time.perf_counter()
                         # if last == 0.0:
                         #     last = now
