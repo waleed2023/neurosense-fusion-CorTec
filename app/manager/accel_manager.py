@@ -153,20 +153,9 @@ class AccelManager:
         AZ = az * sf
         MAG = math.sqrt(AX * AX + AY * AY + AZ * AZ)
         return AX, AY, AZ, MAG
-    
-    async def _broadcaster_worker(self):
-            """Dieser Task läuft im Hintergrund und sendet die Daten."""
-            while not self._stop.is_set():
-                try:
-                    sample = await self.queue.get()
-                    await self.broadcaster.publish(sample)
-                    self.queue.task_done()
-                except Exception as e:
-                    sys.stderr.write(f"{LOG_PREFIX} Broadcast-Error: {e}\n")
 
     async def run(self):
         period = 1.0 / max(1.0, float(ACCEL_ODR_HZ))
-        worker_task = asyncio.create_task(self._broadcaster_worker())
         backoff = 1.0
         max_backoff = 10.0
 
@@ -203,19 +192,17 @@ class AccelManager:
                             mag=MAG,
                             ts_us=ts_us,
                         )
-                        try:
-                            self.queu.put_nowait(sample)
-                        except asyncio.QueueFull:
-                            pass
-                        next_call += period
-                        now = time.perf_counter()
-                        sleep_t = next_call - now
 
-                        if sleep_t > 0.0005: # Nur schlafen, wenn > 0.5ms Zeit ist
+
+                        await self.broadcaster.publish(sample)
+                        self._marklog.mark("ACC_HAL_OUT", idx, ns_to_us(now_ns()))
+                        next_call += period
+                        sleep_t = next_call - time.perf_counter()
+                        if sleep_t > 0:
                             await asyncio.sleep(sleep_t)
-                        elif sleep_t < -period:
-                            # Wir sind mehr als eine Periode im Verzug -> Zeitgeber resetten
-                            next_call = now
+                        else:
+                            next_call = time.perf_counter()
+                        
                         # now = time.perf_counter()
                         # if last == 0.0:
                         #     last = now
@@ -224,7 +211,7 @@ class AccelManager:
                         # await asyncio.sleep(sleep_t)
                         # last = time.perf_counter()
 
-                #self._bus = None
+                self._bus = None
 
             except asyncio.CancelledError:
                 sys.stdout.write(f"{LOG_PREFIX} Accel-Streaming stopped\n")
