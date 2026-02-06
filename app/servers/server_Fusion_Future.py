@@ -24,7 +24,7 @@ from dbus_next import BusType
 
 from app.manager.broadcaster import Broadcaster
 from app.manager.config import LOG_PREFIX, MAX_RATE_HZ_EMG, MAX_RATE_HZ_ACC, FUSION_RET, SENSOR_METRICS_LOG_FILE
-from app.fusion.fusion_manager import FusionManager
+from app.fusion.fusion_manager_test import FusionManager
 from app.servers.gatt_core import BleGattApp
 from app.servers.fusion_service import build_fusion_service
 from app.proto import sensor_pb2, sensor_pb2_grpc
