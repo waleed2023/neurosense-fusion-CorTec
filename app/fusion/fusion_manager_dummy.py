@@ -193,7 +193,11 @@ class FusionManagerMinimalEvent:
                         seq_next = self._seq + 1
 
                         # ENTER = Algo-Start (wall time)
+                        # EMG
                         self._mark_wall("Fusion_Dummy_EMG_ENTER", seq_next)
+
+                        # Trigger-Timestamp (vom Eingang) extra loggen:
+                        self._mark_ts("Fusion_Dummy_EMG_TRIGGER_TS", seq_next, out_ts)
 
                         fused = self._build_fused(
                             out_ts_us=out_ts,
@@ -202,14 +206,9 @@ class FusionManagerMinimalEvent:
                             acc_new=0,
                         )
 
-                        # Exit = Algo-Ende (wall time)
                         self._mark_wall("Fusion_Dummy_EMG_Exit", seq_next)
 
-                        #if not MEASURE_ONLY:
-                            #await self._fusion_b.publish(fused)
 
-                        # WICHTIG: Task neu erstellen
-                        emg_get = asyncio.create_task(emg_q.get())
                     # elif sensor is acc_get:
                         # result: sensor_pb2.AccelSample = sensor.result()
                         # self._last_acc = result
@@ -231,8 +230,10 @@ class FusionManagerMinimalEvent:
 
                         seq_next = self._seq + 1
 
-                        # ENTER = Algo-Start
+                        # ACC
                         self._mark_wall("Fusion_Dummy_ACC_ENTER", seq_next)
+
+                        self._mark_ts("Fusion_Dummy_ACC_TRIGGER_TS", seq_next, out_ts)
 
                         fused = self._build_fused(
                             out_ts_us=out_ts,
@@ -241,13 +242,9 @@ class FusionManagerMinimalEvent:
                             acc_new=1,
                         )
 
-                        # Exit = Algo-Ende
                         self._mark_wall("Fusion_Dummy_ACC_Exit", seq_next)
 
-                        #if not MEASURE_ONLY:
-                            #await self._fusion_b.publish(fused)
 
-                        acc_get = asyncio.create_task(acc_q.get())
 
 
         finally:
