@@ -2,7 +2,7 @@ import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
 
-CSV_PATH = "timing_metrics.csv"
+CSV_PATH = "timing_metrics_dummy.csv"
 
 # Dummy-Output Marks (nimmt den ersten, der in der Datei existiert)
 ACC_MARKS = ["Fusion_Dummy_ACC_TRIGGER_TS", "Fusion_Dummy_ACC_Exit", "Fusion_Dummy_ACC_ENTER"]
