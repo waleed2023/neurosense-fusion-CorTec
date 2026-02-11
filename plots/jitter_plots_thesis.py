@@ -30,6 +30,23 @@ def column_to_array(groups: dict, column_name: str, column_key: str = "ts_us") -
         return groups[column_name][column_key].to_numpy()
     return np.array([])
 
+def compute_time_diff_by_index(groups: dict, start_column: str, end_column: str) -> np.ndarray:
+    """Compute time difference between two columns matched by their index."""
+    if start_column not in groups or end_column not in groups:
+        return np.array([])
+    
+    # Get DataFrames with index and timestamp
+    start_df = groups[start_column][['idx', 'ts_us']].set_index('idx')
+    end_df = groups[end_column][['idx', 'ts_us']].set_index('idx')
+    
+    # Merge on index to match corresponding entries
+    merged = start_df.join(end_df, lsuffix='_start', rsuffix='_end', how='inner')
+    
+    # Compute time difference (end - start)
+    time_diff = merged['ts_us_end'] - merged['ts_us_start']
+    
+    return time_diff.to_numpy()
+
 def print_statistics(data: np.ndarray, label: str, unit: str) -> None:
     """Calculate and print statistics for the given data."""
     if len(data) == 0:
@@ -109,6 +126,50 @@ def main():
                  ylabel="Time Difference [µs]", title="Accelerometer HAL Entry - Violinplot vs Boxplot",
                  xticks=[1, 2], xticklabels=["Violinplot", "Boxplot"])
     fig2.tight_layout()
+
+    # Process HAL_ENTRY to HAL_OUT time difference for ACC
+    acc_hal_latency = compute_time_diff_by_index(groups, "ACC_HAL_ENTRY", "ACC_HAL_OUT")
+    print_statistics(acc_hal_latency, "ACC_HAL_LATENCY (ENTRY to OUT)", "µs")
+    
+    if len(acc_hal_latency) > 0:
+        fig3, ax3 = plt.subplots(figsize=(10, 6))
+        show_violinplot(ax3, acc_hal_latency, position=1, label="Violinplot", 
+                        ylabel="Latency [µs]", title="ACC HAL Latency (ENTRY to OUT) - Violinplot vs Boxplot",
+                        xticks=[1, 2], xticklabels=["Violinplot", "Boxplot"])
+        show_boxplot(ax3, acc_hal_latency, position=2, label="Boxplot", 
+                     ylabel="Latency [µs]", title="ACC HAL Latency (ENTRY to OUT) - Violinplot vs Boxplot",
+                     xticks=[1, 2], xticklabels=["Violinplot", "Boxplot"])
+        fig3.tight_layout()
+
+    # Process HAL_ENTRY to HAL_EXIT time difference for EMG
+    emg_hal_latency = compute_time_diff_by_index(groups, "EMG_HAL_ENTRY", "EMG_HAL_OUT")
+    print_statistics(emg_hal_latency, "EMG_HAL_LATENCY (ENTRY to OUT)", "µs")
+    
+    if len(emg_hal_latency) > 0:
+        fig4, ax4 = plt.subplots(figsize=(10, 6))
+        show_violinplot(ax4, emg_hal_latency, position=1, label="Violinplot", 
+                        ylabel="Latency [µs]", title="EMG HAL Latency (ENTRY to OUT) - Violinplot vs Boxplot",
+                        xticks=[1, 2], xticklabels=["Violinplot", "Boxplot"])
+        show_boxplot(ax4, emg_hal_latency, position=2, label="Boxplot", 
+                     ylabel="Latency [µs]", title="EMG HAL Latency (ENTRY to OUT) - Violinplot vs Boxplot",
+                     xticks=[1, 2], xticklabels=["Violinplot", "Boxplot"])
+        fig4.tight_layout()
+    else:
+        print("No valid EMG HAL latency data available for plotting.")
+
+    # Process Fusion_Dummy_OUT
+    fusion_dummy_out_timestamps = column_to_array(groups, "Fusion_Dummy_OUT")
+    fusion_dummy_out_diff = np.diff(fusion_dummy_out_timestamps)
+    print_statistics(fusion_dummy_out_diff, "FUSION_DUMMY_OUT_DIFF", "µs")
+    
+    fig5, ax5 = plt.subplots(figsize=(10, 6))
+    show_violinplot(ax5, fusion_dummy_out_diff, position=1, label="Violinplot", 
+                    ylabel="Time Difference [µs]", title="Fusion Dummy OUT - Violinplot vs Boxplot",
+                    xticks=[1, 2], xticklabels=["Violinplot", "Boxplot"])
+    show_boxplot(ax5, fusion_dummy_out_diff, position=2, label="Boxplot", 
+                 ylabel="Time Difference [µs]", title="Fusion Dummy OUT - Violinplot vs Boxplot",
+                 xticks=[1, 2], xticklabels=["Violinplot", "Boxplot"])
+    fig5.tight_layout()
     
     plt.show()
 
