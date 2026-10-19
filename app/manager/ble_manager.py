@@ -1,9 +1,13 @@
+# emg/ble_manager.py
+from __future__ import annotations
+
 import sys
-import time
 import struct
 import asyncio
+import random
 from typing import Optional
 from bleak import BleakClient, BleakScanner
+
 from .config import (
     ANALOG_CHAR,
     BATTERY_CHAR,
@@ -13,28 +17,22 @@ from .config import (
     LOG_PREFIX,
     EMG_IDLE_TIMEOUT_MS,
     SENSOR_METRICS_LOG_FILE,
-    MAX_RATE_HZ_EMG,
     now_ns,
-    ns_to_ms,
     ns_to_us,
+    EMG_RX_QUEUE_MAX,
+    EMG_RX_DROP_OLDEST_ON_FULL,
 )
-from .proto import emg_pb2
-from dbus_next.aio import MessageBus
-from dbus_next import Variant, BusType
-from emg.measurment.timing_mark_logger import TimingMarkLogger
-import os
-import random
+from ..proto import sensor_pb2
+from app.measurment.timing_mark_logger import TimingMarkLogger
 
 
 
-EMG_RX_QUEUE_MAX = 2048
-EMG_RX_DROP_OLDEST_ON_FULL = True
 
 
-# --------------------- BLEManager ---------------------
 class BLEManager:
     """
-    read EMG Values via BLE (Bleak) and publish EmgSample to the Broadcaster.
+    Reads EMG values via BLE (Bleak) and publishes EmgSample to the Broadcaster.
+    Uses Unix epoch timestamps in µs (ts_us).
     """
 
     def __init__(self, broadcaster):
@@ -45,28 +43,25 @@ class BLEManager:
 
         # cache for resolved MAC; once we know it, we don't scan again
         self._resolved_mac: Optional[str] = TARGET_MAC or None
-        # cache for last EMG timestamp, used for reconnect on idle
-        self._last_emg_ms = 0
-        self._idle_timeout_ms = EMG_IDLE_TIMEOUT_MS  # default 5s
 
-        # mark logger + hal counter (für ENTRY/OUT Paare)
+        # last EMG timestamp (µs) for idle reconnect
+        self._last_emg_us: int = 0
+        self._idle_timeout_us: int = int(EMG_IDLE_TIMEOUT_MS) * 1000  # ms -> µs
+
+        # timing marks
         self._marklog = TimingMarkLogger(log_file=SENSOR_METRICS_LOG_FILE)
         self._hal_idx = 0
 
-        # queue + worker state (wir speichern (idx, sample), damit OUT zum ENTRY passt)
-        self._emg_rx_q: asyncio.Queue[tuple[int, emg_pb2.EmgSample]] = asyncio.Queue(
+        # queue + worker state (store (idx, sample) to match OUT to ENTRY)
+        self._emg_rx_q: asyncio.Queue[tuple[int, sensor_pb2.EmgSample]] = asyncio.Queue(
             maxsize=EMG_RX_QUEUE_MAX
         )
         self._loop: Optional[asyncio.AbstractEventLoop] = None
         self._publisher_task: Optional[asyncio.Task] = None
 
-
-
-
     async def stop(self):
         self._stop.set()
 
-        # --- stop publisher worker ---
         if self._publisher_task and not self._publisher_task.done():
             self._publisher_task.cancel()
 
@@ -79,7 +74,7 @@ class BLEManager:
     async def _resolve_mac(self, timeout: float = 3.0) -> Optional[str]:
         """
         Resolve target MAC once.
-        - if TARGET_MAC is configured or already cached, use it directly (no scan)
+        - if TARGET_MAC configured or already cached, use it directly (no scan)
         - otherwise scan once by name and cache the result
         """
         if self._resolved_mac:
@@ -90,17 +85,15 @@ class BLEManager:
             sys.stdout.write(f"{LOG_PREFIX} using configured MAC {self._resolved_mac}\n")
             return self._resolved_mac
 
-        sys.stdout.write(f"{LOG_PREFIX} scanning for '{TARGET_NAME}' ...\n")
+        sys.stdout.write(f"{LOG_PREFIX} scanning for '{TARGET_NAME}' .\n")
         devs = await BleakScanner.discover(timeout=timeout)
-        target_lower = TARGET_NAME.lower()
+        target_lower = (TARGET_NAME or "").lower()
 
         for dev in devs:
             name = (dev.name or "").lower()
-            if target_lower in name:
+            if target_lower and target_lower in name:
                 self._resolved_mac = dev.address
-                sys.stdout.write(
-                    f"{LOG_PREFIX} found {TARGET_NAME} at {self._resolved_mac}\n"
-                )
+                sys.stdout.write(f"{LOG_PREFIX} found {TARGET_NAME} at {self._resolved_mac}\n")
                 break
 
         if not self._resolved_mac:
@@ -108,13 +101,13 @@ class BLEManager:
 
         return self._resolved_mac
 
-    def _try_enqueue_emg(self, item: tuple[int, emg_pb2.EmgSample]) -> None:
+    def _try_enqueue_emg(self, item: tuple[int, sensor_pb2.EmgSample]) -> None:
         try:
             self._emg_rx_q.put_nowait(item)
         except asyncio.QueueFull:
             if EMG_RX_DROP_OLDEST_ON_FULL:
                 try:
-                    _ = self._emg_rx_q.get_nowait()  # drop one oldest (tuple)
+                    _ = self._emg_rx_q.get_nowait()  # drop one oldest
                 except asyncio.QueueEmpty:
                     return
                 try:
@@ -123,13 +116,10 @@ class BLEManager:
                     return
             # else: drop newest (do nothing)
 
-
-    # --- single publisher worker (prevents task build-up) ---
     async def _publisher_worker(self) -> None:
         while not self._stop.is_set():
             try:
                 idx, sample = await asyncio.wait_for(self._emg_rx_q.get(), timeout=0.5)
-
             except asyncio.TimeoutError:
                 continue
 
@@ -144,7 +134,6 @@ class BLEManager:
                 except Exception:
                     pass
 
-
     def _on_emg(self, _handle: int, data: bytearray):
         try:
             if len(data) < 2:
@@ -155,22 +144,22 @@ class BLEManager:
                 v = VALUE_MAX
 
             t_ns = now_ns()
-            ts_ms = ns_to_ms(t_ns)   # bleibt ms für Protobuf/Fusion
-            ts_us = ns_to_us(t_ns)   # µs nur fürs Timing-Log
+            ts_us = ns_to_us(t_ns)  # Unix epoch in µs
+
             self._hal_idx += 1
             idx = self._hal_idx
+            #self._marklog.mark("EMG_HAL_DATA_WITHOUT_SCALE", idx, ts_us)
             self._marklog.mark("EMG_HAL_ENTRY", idx, ts_us)
-            self._last_emg_ms = ts_ms
+            self._last_emg_us = ts_us
 
-            sample = emg_pb2.EmgSample(
+            sample = sensor_pb2.EmgSample(
                 value=v,
-                ts_ms=ts_ms,
+                ts_us=ts_us,
                 battery=self._battery,
             )
 
-            # --- CHANGED: no create_task per sample; enqueue instead ---
+            # enqueue (thread-safe)
             if self._loop is not None:
-                # safe even if callback isn't on the event-loop thread
                 self._loop.call_soon_threadsafe(self._try_enqueue_emg, (idx, sample))
             else:
                 self._try_enqueue_emg((idx, sample))
@@ -179,12 +168,12 @@ class BLEManager:
             sys.stderr.write(f"{LOG_PREFIX} on_emg error: {e}\n")
 
     async def run(self):
-        # --- capture loop + start one worker once ---
+        # capture loop + start publisher worker once
         self._loop = asyncio.get_running_loop()
         if not self._publisher_task or self._publisher_task.done():
             self._publisher_task = asyncio.create_task(self._publisher_worker())
 
-        backoff = 1.0  # for reconnect device
+        backoff = 1.0
         while not self._stop.is_set():
             try:
                 mac = await self._resolve_mac()
@@ -193,7 +182,7 @@ class BLEManager:
                     backoff = min(backoff * 2, 10)
                     continue
 
-                sys.stdout.write(f"{LOG_PREFIX} connecting to {mac} ...\n")
+                sys.stdout.write(f"{LOG_PREFIX} connecting to {mac} .\n")
                 async with BleakClient(mac, timeout=15.0) as client:
                     self._client = client
                     self._battery = 255
@@ -208,15 +197,18 @@ class BLEManager:
 
                     await client.start_notify(ANALOG_CHAR, self._on_emg)
                     sys.stdout.write(f"{LOG_PREFIX} EMG Notify active\n")
+
                     backoff = 1.0
-                    self._last_emg_ms = ns_to_ms(now_ns())
+                    self._last_emg_us = ns_to_us(now_ns())
 
                     while client.is_connected and not self._stop.is_set():
                         await asyncio.sleep(0.5)
-                        if self._idle_timeout_ms > 0 and self._last_emg_ms:
-                            if (ns_to_ms(now_ns()) - self._last_emg_ms) > self._idle_timeout_ms:
+
+                        if self._idle_timeout_us > 0 and self._last_emg_us:
+                            now_us = ns_to_us(now_ns())
+                            if (now_us - self._last_emg_us) > self._idle_timeout_us:
                                 sys.stdout.write(
-                                    f"{LOG_PREFIX} no EMG for {self._idle_timeout_ms}ms → reconnect\n"
+                                    f"{LOG_PREFIX} no EMG for {EMG_IDLE_TIMEOUT_MS}ms → reconnect\n"
                                 )
                                 await client.disconnect()
                                 break
@@ -236,7 +228,5 @@ class BLEManager:
             finally:
                 self._client = None
 
-        # --- cleanup worker on exit ---
         if self._publisher_task and not self._publisher_task.done():
             self._publisher_task.cancel()
-        

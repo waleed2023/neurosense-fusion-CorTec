@@ -12,7 +12,7 @@ message FusionSubscribeRequest {
 }
 
 message FusedSample {
-  uint64 ts_ms     = 1;
+  uint64 ts_us     = 1;
   uint32 seq       = 2;
 
   float  emg_level = 3;

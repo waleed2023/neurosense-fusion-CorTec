@@ -1,0 +1,44 @@
+syntax = "proto3";
+package emg;
+
+option java_multiple_files = true;
+option java_package = "dev.cortec-neuro.emg";
+option java_outer_classname = "Fusion_dummyProto";
+
+message FusionMinimalSubscribeRequest {
+  // Packet/notify rate (packets per second). 0 = unlimited (send ASAP).
+  uint32 max_rate_hz = 1;
+
+  // Max number of samples per packet (batch size).
+  uint32 max_samples = 2;
+}
+
+enum Trigger {
+  TRIGGER_EMG = 0;
+  TRIGGER_ACC = 1;
+}
+
+message FusedMinimalSample {
+  uint64 ts_us = 1;
+  uint32 seq   = 2;
+
+  uint64 emg_ts_us   = 3;
+  uint32 emg_value   = 4;
+  uint32 emg_battery = 5;
+  bool   emg_valid   = 6;
+  uint32 emg_count   = 7;
+
+  uint64 acc_ts_us = 8;
+  double ax        = 9;
+  double ay        = 10;
+  double az        = 11;
+  bool   acc_valid = 12;
+  uint32 acc_count = 13;
+
+  Trigger trigger = 14;
+}
+
+// NEW: packet wrapper for batching
+message FusedMinimalPacket {
+  repeated FusedMinimalSample samples = 1;
+}

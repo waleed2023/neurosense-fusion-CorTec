@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
 import asyncio
 
-from emg.broadcaster import Broadcaster
-from emg.proto import emg_pb2
-from emg.fusion.fusion_manager import FusionManager, now_ms
-from emg.config import LOG_PREFIX
+from app.manager.broadcaster import Broadcaster
+from app.proto import sensor_pb2
+from app.fusion.fusion_manager import FusionManager, now_ms
+from app.manager.config import LOG_PREFIX
 
 
 async def emg_producer(b: Broadcaster, n_samples: int, hz: float) -> int:
@@ -13,7 +13,7 @@ async def emg_producer(b: Broadcaster, n_samples: int, hz: float) -> int:
     produced = 0
 
     for _ in range(n_samples):
-        sample = emg_pb2.EmgSample(
+        sample = sensor_pb2.EmgSample(
             value=100,      # simple dummy value
             ts_ms=now_ms(),
             battery=90,
@@ -32,7 +32,7 @@ async def acc_producer(b: Broadcaster, n_samples: int, hz: float) -> int:
     produced = 0
 
     for _ in range(n_samples):
-        sample = emg_pb2.AccelSample(
+        sample = sensor_pb2.AccelSample(
             ax=0.0,
             ay=0.0,
             az=1.0,        # gravity

@@ -16,6 +16,8 @@ ANALOG_CHAR = os.getenv("ANALOG_CHAR", "00002a58-0000-1000-8000-00805f9b34fb")
 BATTERY_CHAR = os.getenv("BATTERY_CHAR", "00002a19-0000-1000-8000-00805f9b34fb")
 TARGET_MAC = os.getenv("EMG_TARGET_MAC", "")
 TARGET_NAME = os.getenv("EMG_TARGET_NAME", "ANR Corp M40")
+EMG_RX_QUEUE_MAX = int(os.getenv("EMG_RX_QUEUE_MAX", "2048")) # for buffering incoming samples
+EMG_RX_DROP_OLDEST_ON_FULL = os.getenv("EMG_RX_DROP_OLDEST_ON_FULL", "1") not in ("0", "false", "False") # drop oldest when queue full
 
 # clamp VALUE_MAX to reasonable range
 VALUE_MAX = int(os.getenv("VALUE_MAX", "1000")) # max value for EMG channels
@@ -47,24 +49,24 @@ REG_CTRL3_C         = 0x12
 OUTX_L_XL           = 0x28
 WHOAMI_EXPECTED = {0x6A, 0x6B, 0x69, 0x6c} # possible values for LSM6DS3, LSM6DS4, LSM6DSO
 
+REG_CTRL10_C        = 0x19
+BIT_TIMESTAMP_EN    = 0x20  # CTRL10_C bit5
+REG_TIMESTAMP0      = 0x40  # TIMESTAMP0..3 = 0x40..0x43
 
-# ===== Streaming / Packet Sizes =====
-MAX_SAMPLES_PER_PACKET_EMG = int(os.getenv("MAX_SAMPLES_PER_PACKET", "64"))  # max samples per packet in streaming services
-MAX_WAIT_S_EMG = float(os.getenv("MAX_WAIT_S", "0.02"))  # max wait time to gather more samples into one packet
-MAX_SAMPLES_PER_PACKET_ACCEL = int(os.getenv("MAX_SAMPLES_PER_PACKET_ACCEL", "128"))
-MAX_WAIT_S_ACCEL = float(os.getenv("MAX_WAIT_S_ACCEL", "0.02"))
-MAX_SAMPLES_PER_PACKET_FUSION = int(os.getenv("MAX_SAMPLES_PER_PACKET_FUSION", "50"))
-MAX_WAIT_S_FUSION = float(os.getenv("MAX_WAIT_S_FUSION", "0.02"))
+TS_TICK_US          = 25    # nominal: 1 tick = 25 µs
+
 
 # ===== Fusion =====
 WINDOW_MS = int(os.getenv("FUSION_WINDOW_MS", "400"))  # time window for fusion in ms
 STEP_MS = int(os.getenv("FUSION_STEP_MS", "1"))      # step size for fusion in ms, define 1 -> 1kHz output, 10 -> 100Hz output
 MAX_DELAY_MS = int(os.getenv("FUSION_MAX_DELAY_MS", "100"))  # 100 ms max allowed delay between EMG and ACC samples, defines the lookback window into historical data
+MAX_DELAY_MS_EMG_DUMMY = int(os.getenv("FUSION_MAX_DELAY_MS_DUMMY", "4000"))  # for dummy fusion manager, allow larger delay
+MAX_DELAY_MS_ACC_DUMMY = int(os.getenv("FUSION_MAX_DELAY_MS_DUMMY", "100"))  # for dummy fusion manager, allow larger delay
 
 # ===== max rates just for jitter =====
 MAX_RATE_HZ_ACC = int(os.getenv("FUSION_MAX_RATE_HZ", "1000")) 
 MAX_RATE_HZ_EMG = int(os.getenv("FUSION_MAX_RATE_HZ_EMG", "50"))
-MAX_RATE_HZ_FUSION = int(os.getenv("FUSION_MAX_RATE_HZ_FUSION", "200")) # max output rate of fused samples to tablet
+MAX_RATE_HZ_FUSION = int(os.getenv("FUSION_MAX_RATE_HZ_FUSION", "833")) # max output rate of fusion service, yo could hier downsample if needed
 
 
 # UUIDs
@@ -103,17 +105,56 @@ METRICS_LOG_FILE = os.getenv("METRICS_LOG_FILE", "timing_metrics.csv")
 # Sensor metrics log file
 SENSOR_METRICS_LOG_FILE = os.getenv(
     "SENSOR_METRICS_LOG_FILE",
-    "sensor_timing_metrics.csv",
+    "timing_metrics.csv",
 )
 
 
 
-def now_ns() -> int:
-    """Wall-clock in ns since epoch."""
-    return time.time_ns()
+import time
 
-def ns_to_ms(ns: int) -> int:
-    return ns // 1_000_000
+_EPOCH_OFFSET_NS = time.time_ns() - time.monotonic_ns()
+
+def now_ns() -> int:
+    # epoch-like wall clock, but monotonic-stable
+    return time.monotonic_ns() + _EPOCH_OFFSET_NS
 
 def ns_to_us(ns: int) -> int:
     return ns // 1_000
+
+
+
+
+# =========================
+# LSM6DSOX FIFO (ACC)
+# =========================
+ACC_USE_FIFO = True
+
+# Watermark optional (wir pollen DIFF_FIFO, Watermark ist hier nur “nice to have”)
+ACC_FIFO_WTM_WORDS = 16
+
+# Damit ein run-Loop nicht “zu lange” FIFO drain’t
+ACC_FIFO_MAX_DRAIN_WORDS = 64
+
+# SMBus block-read ist i.d.R. auf 32 Bytes begrenzt → 4 FIFO-words = 4*7 = 28 Bytes passt
+ACC_FIFO_READ_WORDS_PER_CALL = 4
+
+# FIFO registers (LSM6DSOX)
+REG_FIFO_CTRL1 = 0x07
+REG_FIFO_CTRL2 = 0x08
+REG_FIFO_CTRL3 = 0x09
+REG_FIFO_CTRL4 = 0x0A
+REG_FIFO_STATUS1 = 0x3A
+REG_FIFO_STATUS2 = 0x3B
+REG_FIFO_DATA_OUT_TAG = 0x78
+
+# FIFO modes (FIFO_CTRL4.FIFO_MODE[2:0])
+FIFO_MODE_BYPASS = 0x00
+FIFO_MODE_CONTINUOUS = 0x06   # 0b110 continuous mode
+
+# FIFO TAG (TAG_SENSOR[4:0]) für Accelerometer “NC”
+FIFO_TAG_ACCEL_NC = 0x02
+
+
+# for clent_emu
+MEASURE_ONLY = os.getenv("MEASURE_ONLY", "0") == "1"
+DISABLE_MARKS = os.getenv("DISABLE_MARKS", "0") == "1"

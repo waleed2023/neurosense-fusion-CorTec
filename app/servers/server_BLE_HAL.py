@@ -16,44 +16,61 @@ import signal
 import sys
 import grpc
 
-from emg.broadcaster import Broadcaster
-from emg.ble_manager import BLEManager
-from emg.config import LOG_PREFIX, GRPC_HOST, MAX_RATE_HZ_EMG
-from emg.proto import emg_pb2, emg_pb2_grpc
+from app.manager.broadcaster import Broadcaster
+from app.manager.ble_manager import BLEManager
+from app.manager.config import LOG_PREFIX, GRPC_HOST, MAX_RATE_HZ_EMG
+from app.proto import sensor_pb2, sensor_pb2_grpc
 
 
 
 # gRPC Servicer for EMG streaming
-class EmgGrpcServicer(emg_pb2_grpc.EmgServicer):
+class EmgGrpcServicer(sensor_pb2_grpc.EmgServicer):
     """Streams EmgSample objects from a Broadcaster."""
 
     def __init__(self, broadcaster: Broadcaster):
         self._buffer = broadcaster
 
-    async def StreamEmg(self, request: emg_pb2.SubscribeRequest, context: grpc.aio.ServicerContext):
-        # context: grpc.aio.ServicerContext is used as signature
+    async def StreamEmg(
+        self,
+        request: sensor_pb2.SubscribeRequest,
+        context: grpc.aio.ServicerContext,
+    ):
         q = await self._buffer.subscribe()
         try:
-            # max_rate_hz from client request in case the client(my case flutter/dart app) wants to limit rate, otherwise use MAX_RATE_HZ_EMG
+            # proto3 uint32 => default ist 0
+            # Semantik hier: 0 => KEIN Throttling (send all)
             max_rate = int(getattr(request, "max_rate_hz", 0))
+
+            # No throttling
             if max_rate <= 0:
-                max_rate = MAX_RATE_HZ_EMG # with ARN Corp M40 factory data rate is 10hz
-            interval = 0.0 if max_rate <= 0 else (1.0 / float(max_rate)) # throttle as "max samples per second"
-            # example: if max_rate = 100Hz, interval = 0.01s
-            # may_rate = 0 -> send all samples as they come
-            # throttling hier is drop samples if they come too fast
+                while True:
+                    sample: sensor_pb2.EmgSample = await q.get()
+                    yield sample
+                # (loop ends by cancellation)
+
+            # Throttling (average rate limiter) with token bucket to allow small bursts
             loop = asyncio.get_running_loop()
-            last = 0.0
+
+            # allow at least 2-sample bursts (typical BLE burst pattern)
+            capacity = max(2.0, float(max_rate) * 0.2)  # e.g. 50 Hz => 10 tokens burst
+            tokens = capacity
+            last_t = loop.time()
 
             while True:
-                sample: emg_pb2.EmgSample = await q.get()
+                sample: sensor_pb2.EmgSample = await q.get()
 
-                if interval > 0.0:
-                    now = loop.time()
-                    if (now - last) < interval: # too eyarly than interval (ex. 0.01s for 100Hz)
-                        continue # drop sample
-                    last = now
+                now = loop.time()
+                dt = now - last_t
+                last_t = now
 
+                # refill tokens
+                tokens = min(capacity, tokens + dt * float(max_rate))
+
+                # not enough budget => drop
+                if tokens < 1.0:
+                    continue
+
+                tokens -= 1.0
                 yield sample
 
         except asyncio.CancelledError:
@@ -62,17 +79,11 @@ class EmgGrpcServicer(emg_pb2_grpc.EmgServicer):
             await self._buffer.unsubscribe(q)
 
 
+
 # Set up and start the gRPC server
 async def _serve_grpc(broadcaster: Broadcaster, *, host: str, port: int) -> grpc.aio.Server:
-    # max_send_message_length and max_receive_message_length increased to 4MB
-    # max_receive_message_length is important for high-rate streaming, also 4MB
-    server = grpc.aio.server(
-        options=[
-            ("grpc.max_send_message_length", 4 * 1024 * 1024),
-            ("grpc.max_receive_message_length", 4 * 1024 * 1024),
-        ]
-    )
-    emg_pb2_grpc.add_EmgServicer_to_server(EmgGrpcServicer(broadcaster), server)
+    server = grpc.aio.server()
+    sensor_pb2_grpc.add_EmgServicer_to_server(EmgGrpcServicer(broadcaster), server)
     bind = f"{host}:{port}"
     server.add_insecure_port(bind)
     await server.start()

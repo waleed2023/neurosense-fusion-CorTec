@@ -16,16 +16,16 @@ import signal
 import sys
 import grpc
 
-from emg.broadcaster import Broadcaster
-from emg.accel_manager import AccelManager
-from emg.config import LOG_PREFIX, GRPC_HOST, MAX_RATE_HZ_ACC
-from emg.proto import emg_pb2, emg_pb2_grpc
+from app.manager.broadcaster import Broadcaster
+from app.manager.accel_manager import AccelManager
+from app.manager.config import LOG_PREFIX, GRPC_HOST, MAX_RATE_HZ_ACC
+from app.proto import sensor_pb2, sensor_pb2_grpc
 
 
 
 
 # gRPC Servicer for Accel streaming
-class AccelGrpcServicer(emg_pb2_grpc.AccelServicer):
+class AccelGrpcServicer(sensor_pb2_grpc.AccelServicer):
     """Streams AccelSample objects from a Broadcaster."""
 
     def __init__(self, broadcaster: Broadcaster):
@@ -33,7 +33,7 @@ class AccelGrpcServicer(emg_pb2_grpc.AccelServicer):
     # grpc method
     async def StreamAccel(
         self,
-        request: emg_pb2.AccelSubscribeRequest,
+        request: sensor_pb2.AccelSubscribeRequest,
         context: grpc.aio.ServicerContext,
     ):
         q = await self._buffer.subscribe()
@@ -48,7 +48,7 @@ class AccelGrpcServicer(emg_pb2_grpc.AccelServicer):
             last = 0.0
 
             while True:
-                sample: emg_pb2.AccelSample = await q.get() # get sample from broadcaster
+                sample: sensor_pb2.AccelSample = await q.get() # get sample from broadcaster
 
                 if interval > 0.0:
                     now = loop.time()
@@ -66,13 +66,16 @@ class AccelGrpcServicer(emg_pb2_grpc.AccelServicer):
 # Set up and start the gRPC server
 async def _bulild_grpc(broadcaster: Broadcaster, *, host: str, port: int) -> grpc.aio.Server:
     server = grpc.aio.server()
-    emg_pb2_grpc.add_AccelServicer_to_server(AccelGrpcServicer(broadcaster), server)
+    sensor_pb2_grpc.add_AccelServicer_to_server(AccelGrpcServicer(broadcaster), server)
+
     bind = f"{host}:{port}"
-    server.add_insecure_port(bind)
+    bound_port = server.add_insecure_port(bind)
+    if bound_port == 0:
+        raise RuntimeError(f"ACC gRPC could not bind to {bind} (port in use?)")
+
     await server.start()
     sys.stdout.write(f"{LOG_PREFIX} ACC gRPC listening on {bind}\n")
     return server
-
 
 async def main_async():
     acc_b = Broadcaster()
